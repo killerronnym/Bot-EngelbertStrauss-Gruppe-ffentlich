@@ -89,34 +89,29 @@
 
         <div class="message-feed">
             {% for msg in messages %}
-            <div class="message-bubble {% if msg.is_deleted %}deleted{% endif %}">
+            <div class="message-bubble">
                 <img src="{{ url_for('tg_avatar_proxy', user_id=msg.user_id) }}" class="avatar" alt="A">
                 <div class="message-content flex-grow-1">
                     <div class="message-header">
-                        <span class="user-name">{{ msg.full_name or msg.username or msg.user_id }}</span>
+                        {% set display_name = (msg.user.full_name if msg.user else None) or (msg.user.username if msg.user else None) or msg.user_id %}
+                        <span class="user-name">{{ display_name }}</span>
                         <span class="timestamp">{{ msg.ts | datetimeformat("%H:%M:%S | %d.%m.%Y") }}</span>
                     </div>
                     {% if msg.text %}<div class="message-text">{{ msg.text }}</div>{% endif %}
 
-                    {% set file_id = msg.get('file_id') or (msg.get('media') and msg.get('media').get('file_id')) %}
-                    {% if (msg.get('media_kind') == 'photo' or (msg.get('media') and msg.get('media').get('kind') == 'photo')) and file_id %}
+                    {% if msg.media_kind == 'photo' and msg.file_id %}
                     <div class="message-media">
-                        <img src="{{ url_for('tg_media_proxy', file_id=file_id) }}" alt="Bild">
+                        <img src="{{ url_for('tg_media_proxy', file_id=msg.file_id) }}" alt="Bild">
                     </div>
                     {% endif %}
 
-                    {% if msg.is_deleted %}
-                    <div class="deleted-indicator">
-                        <i class="bi bi-trash-fill"></i> Nachricht wurde von einem Moderator entfernt.
-                    </div>
-                    {% endif %}
                 </div>
                 <div class="message-actions">
                     <a href="{{ url_for('user_detail', user_id=msg.user_id) }}" class="btn btn-sm btn-outline-primary">
                         <i class="bi bi-person-fill"></i> Details
                     </a>
                     <button class="btn btn-sm btn-danger"
-                            onclick="openDeleteModal('{{ msg.user_id }}', '{{ msg.chat_id }}', '{{ msg.msg_id or msg.message_id }}', '{{ (msg.full_name or msg.username)|escape }}', '{{ (topics.get(msg.chat_id|string, {}).get('name', 'Unbekannte Gruppe'))|escape }}', '{{ msg.thread_id or '' }}')">
+                            onclick="openDeleteModal('{{ msg.user_id }}', '{{ msg.chat_id }}', '{{ msg.message_id }}', '{{ (msg.user.full_name if msg.user else (msg.user.username if msg.user else msg.user_id))|escape }}', '{{ (topics.get(msg.chat_id|string, {}).get('name', 'Unbekannte Gruppe'))|escape }}', '{{ msg.thread_id or '' }}')">
                         <i class="bi bi-trash-fill"></i> Löschen
                     </button>
                 </div>

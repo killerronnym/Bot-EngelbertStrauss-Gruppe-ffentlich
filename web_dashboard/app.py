@@ -5,6 +5,7 @@ from logging.handlers import RotatingFileHandler
 import subprocess
 import sys
 import time
+import requests
 from datetime import datetime, timedelta
 from flask import (
     Flask, render_template, request, flash, redirect, url_for, jsonify, send_file, abort, session
@@ -194,7 +195,57 @@ def live_moderation_config():
 @app.route("/live-moderation/delete", methods=["POST"])
 @login_required
 def live_moderation_delete():
-    flash("Aktion vorgemerkt.", "info")
+    user_id = request.form.get("user_id")
+    chat_id = request.form.get("chat_id")
+    message_id = request.form.get("message_id")
+    action = request.form.get("action") # delete, warn
+    reason = request.form.get("reason_preset")
+    if reason == "other": reason = request.form.get("reason_custom")
+    
+    # Get Token
+    token = load_json(ID_FINDER_CONFIG_FILE).get("bot_token")
+    if not token:
+        flash("Fehler: Bot-Token nicht konfiguriert (ID-Finder).", "danger")
+        return redirect(url_for("live_moderation"))
+
+    # 1. Delete Message
+    try:
+        del_res = requests.post(f"https://api.telegram.org/bot{token}/deleteMessage", json={"chat_id": chat_id, "message_id": message_id})
+        if del_res.status_code != 200:
+             log.error(f"Failed to delete message: {del_res.text}")
+             # Don't return, try to warn anyway if requested
+    except Exception as e:
+        log.error(f"Error deleting message: {e}")
+
+    # 2. Log / Warn
+    with SessionLocal() as db:
+        # Create Mod Log
+        mod_log = ModerationLog(
+            chat_id=int(chat_id) if chat_id else 0,
+            user_id=int(user_id) if user_id else 0,
+            admin_id=0, # Web Admin
+            action=action,
+            reason=reason,
+            message_id=int(message_id) if message_id else 0
+        )
+        db.add(mod_log)
+        
+        # If warn -> Check count? (Not strictly implemented here, but we log it)
+        # Send Warning DM?
+        if action == "warn":
+             # Try to send DM
+             mod_cfg = load_json(os.path.join(DATA_DIR, "moderation_config.json"), {})
+             warn_text = mod_cfg.get("warning_text")
+             if warn_text:
+                 # format text
+                 txt = warn_text.replace("{user}", str(user_id)).replace("{reason}", reason or "Verstoß")
+                 try:
+                     requests.post(f"https://api.telegram.org/bot{token}/sendMessage", json={"chat_id": user_id, "text": txt})
+                 except: pass
+
+        db.commit()
+
+    flash(f"Aktion '{action}' ausgeführt.", "success")
     return redirect(url_for("live_moderation"))
 
 # --- ID FINDER ---
@@ -326,7 +377,20 @@ def delete_broadcast(broadcast_id):
 @app.route("/broadcast/topic/save", methods=["POST"])
 @login_required
 def save_topic_mapping():
-    flash("In SQL Version werden Topics automatisch registriert.", "info")
+    t_id = request.form.get("topic_id")
+    t_name = request.form.get("topic_name")
+    if t_id and t_name:
+        with SessionLocal() as db:
+            t = db.query(Topic).filter(Topic.topic_id == int(t_id)).first()
+            if t:
+                t.name = t_name
+            else:
+                new_t = Topic(chat_id=0, topic_id=int(t_id), name=t_name)
+                db.add(new_t)
+            db.commit()
+        flash("Topic gespeichert.", "success")
+    else:
+        flash("Daten fehlen.", "danger")
     return redirect(url_for("broadcast_manager"))
 
 @app.route("/broadcast/topic/delete/<topic_id>", methods=["POST"])
@@ -388,7 +452,10 @@ def minecraft_status_save():
 @app.route("/minecraft/reset-message", methods=["POST"])
 @login_required
 def minecraft_status_reset_message():
-    flash("Reset signalisiert.", "info")
+    cfg = load_json(MINECRAFT_STATUS_CONFIG_FILE)
+    cfg["status_message_id"] = None
+    save_json(MINECRAFT_STATUS_CONFIG_FILE, cfg)
+    flash("Status-Nachricht zurückgesetzt. Bot sendet neu...", "success")
     return redirect(url_for("minecraft_status_page"))
 
 # --- INVITE BOT ---
@@ -586,6 +653,57 @@ def update_install():
 @app.route("/api/update/status")
 @login_required
 def update_status(): return jsonify(get_updater().get_status() if get_updater() else {"status": "idle"})
+
+@app.route("/tg/avatar/<user_id>")
+def tg_avatar_proxy(user_id):
+    try:
+        # Prio 1: ID Finder Token
+        cfg = load_json(ID_FINDER_CONFIG_FILE)
+        token = cfg.get("bot_token")
+        
+        # Prio 2: Quiz/Umfrage Token (Fallback)
+        if not token:
+            cfg2 = load_json(DASHBOARD_CONFIG_FILE)
+            token = cfg2.get("quiz", {}).get("token") or cfg2.get("umfrage", {}).get("token")
+
+        if not token: abort(404)
+        
+        res = requests.get(f"https://api.telegram.org/bot{token}/getUserProfilePhotos?user_id={user_id}&limit=1")
+        if res.status_code != 200: abort(404)
+        data = res.json()
+        if not data.get("result") or not data["result"]["photos"]: abort(404)
+        
+        file_id = data["result"]["photos"][0][-1]["file_id"]
+        
+        res = requests.get(f"https://api.telegram.org/bot{token}/getFile?file_id={file_id}")
+        if res.status_code != 200: abort(404)
+        file_path = res.json()["result"]["file_path"]
+        
+        return redirect(f"https://api.telegram.org/file/bot{token}/{file_path}")
+    except Exception as e:
+        log.error(f"Avatar proxy error: {e}")
+        abort(404)
+
+@app.route("/tg/media/<file_id>")
+def tg_media_proxy(file_id):
+    try:
+        cfg = load_json(ID_FINDER_CONFIG_FILE)
+        token = cfg.get("bot_token")
+        
+        if not token:
+             cfg2 = load_json(DASHBOARD_CONFIG_FILE)
+             token = cfg2.get("quiz", {}).get("token")
+
+        if not token: abort(404)
+        
+        res = requests.get(f"https://api.telegram.org/bot{token}/getFile?file_id={file_id}")
+        if res.status_code != 200: abort(404)
+        file_path = res.json()["result"]["file_path"]
+        
+        return redirect(f"https://api.telegram.org/file/bot{token}/{file_path}")
+    except Exception as e:
+        log.error(f"Media proxy error: {e}")
+        abort(404)
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=9002, debug=True)
