@@ -10,7 +10,7 @@ from datetime import datetime, timedelta
 from flask import (
     Flask, render_template, request, flash, redirect, url_for, jsonify, send_file, abort, session
 )
-from sqlalchemy import func, desc
+from sqlalchemy import func, desc, extract, and_
 from sqlalchemy.orm import joinedload
 from werkzeug.security import generate_password_hash
 from werkzeug.utils import secure_filename
@@ -182,10 +182,28 @@ def live_moderation():
         if topic_id and topic_id != "all": query = query.filter(Activity.thread_id == int(topic_id))
         messages = query.options(joinedload(Activity.user)).order_by(Activity.ts.desc()).limit(100).all()
         topics_db = db.query(Topic).all()
+
+        # Fetch Chat Titles
+        unique_chat_ids = list(set(t.chat_id for t in topics_db))
+        chat_titles = {}
+        if unique_chat_ids:
+            try:
+                # Group by chat_id to get one title per chat. 
+                # This assumes title doesn't change much or getting any title is fine.
+                chat_titles_rows = db.query(Activity.chat_id, Activity.chat_title)\
+                    .filter(Activity.chat_id.in_(unique_chat_ids))\
+                    .filter(Activity.chat_title.isnot(None))\
+                    .group_by(Activity.chat_id).all()
+                chat_titles = {r[0]: r[1] for r in chat_titles_rows}
+            except Exception as e:
+                log.error(f"Error fetching chat titles: {e}")
+
     topic_dict = {}
     for t in topics_db:
         cid = str(t.chat_id)
-        if cid not in topic_dict: topic_dict[cid] = {"name": f"Chat {cid}", "topics": {}}
+        if cid not in topic_dict:
+            display_name = chat_titles.get(t.chat_id, f"Chat {cid}")
+            topic_dict[cid] = {"name": display_name, "topics": {}}
         topic_dict[cid]["topics"][str(t.topic_id)] = t.name
     return render_template("live_moderation.html", messages=messages, topics=topic_dict, mod_config=load_json(os.path.join(DATA_DIR, "moderation_config.json"), {}), selected_chat_id=chat_id, selected_topic_id=topic_id)
 
@@ -273,17 +291,118 @@ def id_finder_save_config():
 @app.route("/id-finder/analytics")
 @login_required
 def id_finder_analytics(): 
+    days = request.args.get("days", type=int)
+    month = request.args.get("month", type=int)
+    year = request.args.get("year", type=int)
+
     with SessionLocal() as db:
         total_users = db.query(User).count()
         total_messages = db.query(Activity).count()
-        leaderboard = db.query(User.full_name, User.username, func.count(Activity.id).label('count')).join(Activity, Activity.user_id == User.id).group_by(User.id).order_by(desc('count')).limit(10).all()
-        last_week = datetime.utcnow() - timedelta(days=7)
-        timeline_raw = db.query(func.date(Activity.ts).label('date'), func.count(Activity.id).label('count')).filter(Activity.ts >= last_week).group_by('date').order_by('date').all()
+        
+        # Build query with filters
+        query = db.query(Activity)
+        if days:
+            start_date = datetime.utcnow() - timedelta(days=days)
+            query = query.filter(Activity.ts >= start_date)
+        if month and month > 0:
+            query = query.filter(extract('month', Activity.ts) == month)
+        if year and year > 0:
+            query = query.filter(extract('year', Activity.ts) == year)
+
+        # Leaderboard
+        leaderboard = db.query(
+            User.id, 
+            User.full_name, 
+            User.username, 
+            func.count(Activity.id).label('count'),
+            func.sum(Activity.has_media).label('media_count')
+        ).join(Activity, Activity.user_id == User.id)\
+        .filter(Activity.id.in_(query.with_entities(Activity.id)))\
+        .group_by(User.id).order_by(desc('count')).limit(10).all()
+
+        # Timeline
+        timeline_raw = db.query(func.date(Activity.ts).label('date'), func.count(Activity.id).label('count'))\
+            .filter(Activity.id.in_(query.with_entities(Activity.id)))\
+            .group_by('date').order_by('date').all()
+            
         timeline = {"labels": [r.date for r in timeline_raw], "total": [r.count for r in timeline_raw]}
-        hours_raw = db.query(func.strftime('%H', Activity.ts).label('hour'), func.count(Activity.id).label('count')).group_by('hour').all()
+        
+        # Hours
+        hours_raw = db.query(func.strftime('%H', Activity.ts).label('hour'), func.count(Activity.id).label('count'))\
+            .filter(Activity.id.in_(query.with_entities(Activity.id)))\
+            .group_by('hour').all()
         busiest_hours = [0] * 24
         for r in hours_raw: busiest_hours[int(r.hour)] = r.count
-    return render_template("id_finder_analytics.html", stats={"total_users": total_users, "total_messages": total_messages}, activity={"leaderboard": [{"name": r[0] or r[1], "count": r[2]} for r in leaderboard], "timeline": timeline, "busiest_hours": busiest_hours, "busiest_days": [0]*7})
+
+        # Days
+        # SQLite uses 0=Sunday, 6=Saturday for strftime('%w', ...) 
+        # Chart.js often expects 0=Monday if labels are Mo,Di... but we can map it.
+        # Let's map SQLite 0..6 (Sun..Sat) to 0..6 (Mon..Sun) for the chart labels provided in HTML ['Mo', 'Di', ...]
+        days_raw = db.query(func.strftime('%w', Activity.ts).label('dow'), func.count(Activity.id).label('count'))\
+            .filter(Activity.id.in_(query.with_entities(Activity.id)))\
+            .group_by('dow').all()
+        
+        # Map: Sun(0)->6, Mon(1)->0, Tue(2)->1, ... Sat(6)->5
+        busiest_days = [0] * 7
+        for r in days_raw:
+            dow_sqlite = int(r.dow)
+            dow_chart = (dow_sqlite - 1) % 7
+            busiest_days[dow_chart] = r.count
+
+    return render_template("id_finder_analytics.html", 
+        stats={"total_users": total_users, "total_messages": total_messages}, 
+        activity={
+            "leaderboard": [{
+                "uid": r[0], 
+                "name": r[1] or r[2] or f"User {r[0]}", 
+                "msgs": r[3], 
+                "media": r[4] or 0, 
+                "reacts": 0 
+            } for r in leaderboard], 
+            "timeline": timeline, 
+            "busiest_hours": busiest_hours, 
+            "busiest_days": busiest_days
+        }
+    )
+
+@app.route("/api/id-finder/user-activity/<user_id>")
+@login_required
+def api_user_activity(user_id):
+    days = request.args.get("days", type=int)
+    month = request.args.get("month", type=int)
+    year = request.args.get("year", type=int)
+    
+    with SessionLocal() as db:
+        query = db.query(func.date(Activity.ts).label('date'), func.count(Activity.id).label('count'))\
+            .filter(Activity.user_id == int(user_id))
+        
+        if days:
+            start_date = datetime.utcnow() - timedelta(days=days)
+            query = query.filter(Activity.ts >= start_date)
+        if month and month > 0:
+            query = query.filter(extract('month', Activity.ts) == month)
+        if year and year > 0:
+            query = query.filter(extract('year', Activity.ts) == year)
+            
+        raw = query.group_by('date').order_by('date').all()
+        
+        # We need to match the global labels. 
+        # Ideally, we return a dict {date: count} and let frontend map it, 
+        # or we return an array matching the global labels if passed.
+        # For simplicity, let's return objects {t: date, y: count} which Chart.js handles well with time scales,
+        # but here we used category scale (strings). 
+        
+        # Let's return a map.
+        data_map = {r.date: r.count for r in raw}
+        
+        # Get global labels from query (re-run logic or pass from frontend? Frontend is easier but insecure/messy)
+        # Better: Re-generate global labels for the same period to ensure alignment, 
+        # OR just return the sparse data and let frontend align it with the existing labels.
+        
+        # We will assume the frontend has the labels from the page load.
+        # To align perfectly, we need those labels. 
+        # But we can just return the map and let JS fill the array.
+        return jsonify({"timeline_map": data_map})
 
 @app.route("/id-finder/commands")
 @login_required
@@ -678,12 +797,15 @@ def tg_avatar_proxy(user_id):
         data = res.json()
         if not data.get("result") or not data["result"]["photos"]: abort(404)
         
-        file_id = data["result"]["photos"][0][-1]["file_id"]
+        # Get the smallest photo for avatar
+        photo_list = data["result"]["photos"][0]
+        file_id = photo_list[0]["file_id"] # small
         
         res = requests.get(f"https://api.telegram.org/bot{token}/getFile?file_id={file_id}")
         if res.status_code != 200: abort(404)
         file_path = res.json()["result"]["file_path"]
         
+        # Redirect to Telegram file content
         return redirect(f"https://api.telegram.org/file/bot{token}/{file_path}")
     except Exception as e:
         log.error(f"Avatar proxy error: {e}")

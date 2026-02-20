@@ -41,7 +41,7 @@
                                 <select class="form-select" name="topic_id">
                                     <option value="">-- Hauptchat (kein Topic) --</option>
                                     {% for tid, name in known_topics.items() %}
-                                        <option value="{{ tid }}">{{ name }} (ID: {{ tid }})</option>
+                                        <option value="{{ tid }}">{{ name }}</option>
                                     {% endfor %}
                                 </select>
                             </div>
