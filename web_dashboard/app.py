@@ -92,6 +92,20 @@ def get_bot_status():
         return {k: {"running": cfg["pattern"] in output} for k, cfg in MATCH_CONFIG.items()}
     except: return {k: {"running": False} for k in MATCH_CONFIG}
 
+_updater_instance = None
+def get_updater():
+    global _updater_instance
+    if _updater_instance: return _updater_instance
+    cfg = load_json(DASHBOARD_CONFIG_FILE)
+    if not cfg or "github_owner" not in cfg: return None
+    _updater_instance = Updater(
+        repo_owner=cfg["github_owner"],
+        repo_name=cfg["github_repo"],
+        current_version_file=VERSION_FILE,
+        project_root=PROJECT_ROOT
+    )
+    return _updater_instance
+
 @app.template_filter('datetimeformat')
 def datetimeformat(value, format='%H:%M:%S | %d.%m.%Y'):
     if value is None: return ""
