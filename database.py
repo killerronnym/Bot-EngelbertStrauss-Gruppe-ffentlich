@@ -51,6 +51,7 @@ class Activity(Base):
     media_kind = Column(String, nullable=True)
     file_id = Column(String, nullable=True)
     is_command = Column(Boolean, default=False)
+    is_deleted = Column(Boolean, default=False) # New column
     
     user = relationship("User", back_populates="activities")
 

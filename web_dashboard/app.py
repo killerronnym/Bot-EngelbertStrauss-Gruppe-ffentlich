@@ -15,6 +15,7 @@ from sqlalchemy.orm import joinedload
 from werkzeug.security import generate_password_hash
 from werkzeug.utils import secure_filename
 import uuid
+import threading
 
 # ✅ Umfassender Pfad-Fix für NAS/Docker Umgebungen
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -221,24 +222,41 @@ def live_moderation_delete():
     user_id = request.form.get("user_id")
     chat_id = request.form.get("chat_id")
     message_id = request.form.get("message_id")
+    topic_id = request.form.get("topic_id")
     action = request.form.get("action") # delete, warn
     reason = request.form.get("reason_preset")
     if reason == "other": reason = request.form.get("reason_custom")
+    
+    post_to_topic = "post_to_topic" in request.form
+    send_dm = "send_dm" in request.form
+    
+    user_name = request.form.get("user_name") # For template rendering
     
     # Get Token
     token = load_json(ID_FINDER_CONFIG_FILE).get("bot_token")
     if not token:
         flash("Fehler: Bot-Token nicht konfiguriert (ID-Finder).", "danger")
         return redirect(url_for("live_moderation"))
+        
+    mod_cfg = load_json(os.path.join(DATA_DIR, "moderation_config.json"), {})
 
     # 1. Delete Message
     try:
         del_res = requests.post(f"https://api.telegram.org/bot{token}/deleteMessage", json={"chat_id": chat_id, "message_id": message_id})
         if del_res.status_code != 200:
              log.error(f"Failed to delete message: {del_res.text}")
-             # Don't return, try to warn anyway if requested
+             flash(f"Fehler beim Löschen der Nachricht: {del_res.text}", "danger")
+        else:
+            # Update DB to mark as deleted
+            with SessionLocal() as db:
+                msg = db.query(Activity).filter(Activity.message_id == int(message_id), Activity.chat_id == int(chat_id)).first()
+                if msg:
+                    msg.is_deleted = True
+                    db.commit()
+
     except Exception as e:
         log.error(f"Error deleting message: {e}")
+        flash(f"Fehler beim Löschen der Nachricht: {e}", "danger")
 
     # 2. Log / Warn
     with SessionLocal() as db:
@@ -253,23 +271,72 @@ def live_moderation_delete():
         )
         db.add(mod_log)
         
-        # If warn -> Check count? (Not strictly implemented here, but we log it)
-        # Send Warning DM?
+        # Determine Warn Count (for placeholders)
+        warn_count = 0
         if action == "warn":
-             # Try to send DM
-             mod_cfg = load_json(os.path.join(DATA_DIR, "moderation_config.json"), {})
-             warn_text = mod_cfg.get("warning_text")
-             if warn_text:
-                 # format text
-                 txt = warn_text.replace("{user}", str(user_id)).replace("{reason}", reason or "Verstoß")
-                 try:
-                     requests.post(f"https://api.telegram.org/bot{token}/sendMessage", json={"chat_id": user_id, "text": txt})
-                 except: pass
+             warn_count = db.query(ModerationLog).filter(ModerationLog.user_id == int(user_id), ModerationLog.action == "warn").count() + 1
+             # We just added one, so +1? Or count including this one. Since we just added, count should be inclusive if we committed.
+             # Wait, we haven't committed mod_log yet.
+        
+        db.commit() # Commit to get ID and save log
 
-        db.commit()
+        if action == "warn":
+             # Recount properly
+             warn_count = db.query(ModerationLog).filter(ModerationLog.user_id == int(user_id), ModerationLog.action == "warn").count()
+
+        # Send DM?
+        if send_dm:
+             warn_text = mod_cfg.get("warning_text", "")
+             if warn_text:
+                 txt = warn_text.replace("{user}", user_name or str(user_id))\
+                                .replace("{reason}", reason or "Verstoß")\
+                                .replace("{warn_count}", str(warn_count))\
+                                .replace("{max_warnings}", str(mod_cfg.get("max_warnings", 3)))\
+                                .replace("{group}", request.form.get("chat_name") or "der Gruppe")
+                 
+                 try:
+                     dm_res = requests.post(f"https://api.telegram.org/bot{token}/sendMessage", json={"chat_id": user_id, "text": txt})
+                     if dm_res.status_code != 200:
+                         log.error(f"Failed to send DM: {dm_res.text}")
+                         # Maybe user blocked bot or hasn't started it
+                 except Exception as e: log.error(f"Failed to send DM: {e}")
+
+        # Post to Topic?
+        if post_to_topic:
+             notice_text = mod_cfg.get("public_delete_notice_text", "")
+             if notice_text:
+                 txt = notice_text.replace("{user}", user_name or str(user_id)).replace("{reason}", reason or "Verstoß")
+                 payload = {"chat_id": chat_id, "text": txt}
+                 
+                 # IMPORTANT: thread_id handling. 
+                 # If topic_id is "None" or 0 or empty, we shouldn't send message_thread_id unless it's a supergroup with topics enabled.
+                 # If the message came from a topic, we reply to that topic.
+                 if topic_id and topic_id != "None" and topic_id != "0": 
+                     payload["message_thread_id"] = int(topic_id)
+                 
+                 try:
+                     res = requests.post(f"https://api.telegram.org/bot{token}/sendMessage", json=payload)
+                     
+                     if res.status_code != 200:
+                         log.error(f"Failed to post topic notice: {res.text}")
+                     else:
+                         # Auto-delete notice?
+                         duration = mod_cfg.get("public_delete_notice_duration", 60)
+                         if duration > 0:
+                             sent_msg_id = res.json().get("result", {}).get("message_id")
+                             if sent_msg_id:
+                                 def delete_later(chat, msg, delay):
+                                     time.sleep(delay)
+                                     try:
+                                         requests.post(f"https://api.telegram.org/bot{token}/deleteMessage", json={"chat_id": chat, "message_id": msg})
+                                     except Exception as e:
+                                         log.error(f"Error auto-deleting notice: {e}")
+                                 
+                                 threading.Thread(target=delete_later, args=(chat_id, sent_msg_id, duration), daemon=True).start()
+                 except Exception as e: log.error(f"Failed to post topic notice: {e}")
 
     flash(f"Aktion '{action}' ausgeführt.", "success")
-    return redirect(url_for("live_moderation"))
+    return redirect(url_for("live_moderation", chat_id=chat_id, topic_id=topic_id))
 
 # --- ID FINDER ---
 @app.route("/id-finder")

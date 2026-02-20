@@ -1,14 +1,91 @@
-2026-02-20 18:24:41,167 - werkzeug - INFO - 127.0.0.1 - - [20/Feb/2026 18:24:41] "[36mGET /minecraft?__debugger__=yes&cmd=resource&f=console.png&s=zXQsYJmNmETYiDyB7M0R HTTP/1.1[0m" 304 -
-2026-02-20 18:24:46,829 - werkzeug - INFO - 127.0.0.1 - - [20/Feb/2026 18:24:46] "[35m[1mGET /admin/users HTTP/1.1[0m" 500 -
-2026-02-20 18:24:46,900 - werkzeug - INFO - 127.0.0.1 - - [20/Feb/2026 18:24:46] "[36mGET /admin/users?__debugger__=yes&cmd=resource&f=style.css HTTP/1.1[0m" 304 -
-2026-02-20 18:24:46,914 - werkzeug - INFO - 127.0.0.1 - - [20/Feb/2026 18:24:46] "[36mGET /admin/users?__debugger__=yes&cmd=resource&f=debugger.js HTTP/1.1[0m" 304 -
-2026-02-20 18:24:46,963 - werkzeug - INFO - 127.0.0.1 - - [20/Feb/2026 18:24:46] "[36mGET /admin/users?__debugger__=yes&cmd=resource&f=console.png&s=zXQsYJmNmETYiDyB7M0R HTTP/1.1[0m" 304 -
-2026-02-20 18:24:47,937 - werkzeug - INFO - 127.0.0.1 - - [20/Feb/2026 18:24:47] "[35m[1mGET /admin/users HTTP/1.1[0m" 500 -
-2026-02-20 18:24:48,028 - werkzeug - INFO - 127.0.0.1 - - [20/Feb/2026 18:24:48] "[36mGET /admin/users?__debugger__=yes&cmd=resource&f=style.css HTTP/1.1[0m" 304 -
-2026-02-20 18:24:48,043 - werkzeug - INFO - 127.0.0.1 - - [20/Feb/2026 18:24:48] "[36mGET /admin/users?__debugger__=yes&cmd=resource&f=debugger.js HTTP/1.1[0m" 304 -
-2026-02-20 18:24:48,103 - werkzeug - INFO - 127.0.0.1 - - [20/Feb/2026 18:24:48] "[36mGET /admin/users?__debugger__=yes&cmd=resource&f=console.png&s=zXQsYJmNmETYiDyB7M0R HTTP/1.1[0m" 304 -
-2026-02-20 18:24:54,715 - werkzeug - INFO - 127.0.0.1 - - [20/Feb/2026 18:24:54] "[35m[1mGET /api/update/check HTTP/1.1[0m" 500 -
-2026-02-20 18:24:55,932 - werkzeug - INFO - 127.0.0.1 - - [20/Feb/2026 18:24:55] "GET /critical-errors HTTP/1.1" 200 -
-2026-02-20 18:25:06,602 - werkzeug - INFO - 127.0.0.1 - - [20/Feb/2026 18:25:06] "[35m[1mGET /api/update/check HTTP/1.1[0m" 500 -
-2026-02-20 18:25:10,883 - werkzeug - INFO - 127.0.0.1 - - [20/Feb/2026 18:25:10] "GET /critical-errors HTTP/1.1" 200 -
-2026-02-20 18:25:55,226 - werkzeug - INFO -  * Detected change in '/home/user/telegramm-bot-es/web_dashboard/app.py', reloading
+2026-02-20 22:37:54,475 - web_dashboard.app - ERROR - Exception on /live-moderation [GET]
+Traceback (most recent call last):
+  File "/home/user/telegramm-bot-es/.venv/lib/python3.11/site-packages/sqlalchemy/engine/base.py", line 1967, in _exec_single_context
+    self.dialect.do_execute(
+  File "/home/user/telegramm-bot-es/.venv/lib/python3.11/site-packages/sqlalchemy/engine/default.py", line 952, in do_execute
+    cursor.execute(statement, parameters)
+sqlite3.OperationalError: no such column: activities.is_deleted
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/home/user/telegramm-bot-es/.venv/lib/python3.11/site-packages/flask/app.py", line 1511, in wsgi_app
+    response = self.full_dispatch_request()
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/user/telegramm-bot-es/.venv/lib/python3.11/site-packages/flask/app.py", line 919, in full_dispatch_request
+    rv = self.handle_user_exception(e)
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/user/telegramm-bot-es/.venv/lib/python3.11/site-packages/flask/app.py", line 917, in full_dispatch_request
+    rv = self.dispatch_request()
+         ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/user/telegramm-bot-es/.venv/lib/python3.11/site-packages/flask/app.py", line 902, in dispatch_request
+    return self.ensure_sync(self.view_functions[rule.endpoint])(**view_args)  # type: ignore[no-any-return]
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/user/telegramm-bot-es/web_dashboard/app.py", line 138, in decorated_function
+    return f(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^
+  File "/home/user/telegramm-bot-es/web_dashboard/app.py", line 184, in live_moderation
+    messages = query.options(joinedload(Activity.user)).order_by(Activity.ts.desc()).limit(100).all()
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/user/telegramm-bot-es/.venv/lib/python3.11/site-packages/sqlalchemy/orm/query.py", line 2704, in all
+    return self._iter().all()  # type: ignore
+           ^^^^^^^^^^^^
+  File "/home/user/telegramm-bot-es/.venv/lib/python3.11/site-packages/sqlalchemy/orm/query.py", line 2857, in _iter
+    result: Union[ScalarResult[_T], Result[_T]] = self.session.execute(
+                                                  ^^^^^^^^^^^^^^^^^^^^^
+  File "/home/user/telegramm-bot-es/.venv/lib/python3.11/site-packages/sqlalchemy/orm/session.py", line 2351, in execute
+    return self._execute_internal(
+           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/user/telegramm-bot-es/.venv/lib/python3.11/site-packages/sqlalchemy/orm/session.py", line 2249, in _execute_internal
+    result: Result[Any] = compile_state_cls.orm_execute_statement(
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/user/telegramm-bot-es/.venv/lib/python3.11/site-packages/sqlalchemy/orm/context.py", line 306, in orm_execute_statement
+    result = conn.execute(
+             ^^^^^^^^^^^^^
+  File "/home/user/telegramm-bot-es/.venv/lib/python3.11/site-packages/sqlalchemy/engine/base.py", line 1419, in execute
+    return meth(
+           ^^^^^
+  File "/home/user/telegramm-bot-es/.venv/lib/python3.11/site-packages/sqlalchemy/sql/elements.py", line 527, in _execute_on_connection
+    return connection._execute_clauseelement(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/user/telegramm-bot-es/.venv/lib/python3.11/site-packages/sqlalchemy/engine/base.py", line 1641, in _execute_clauseelement
+    ret = self._execute_context(
+          ^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/user/telegramm-bot-es/.venv/lib/python3.11/site-packages/sqlalchemy/engine/base.py", line 1846, in _execute_context
+    return self._exec_single_context(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/user/telegramm-bot-es/.venv/lib/python3.11/site-packages/sqlalchemy/engine/base.py", line 1986, in _exec_single_context
+    self._handle_dbapi_exception(
+  File "/home/user/telegramm-bot-es/.venv/lib/python3.11/site-packages/sqlalchemy/engine/base.py", line 2363, in _handle_dbapi_exception
+    raise sqlalchemy_exception.with_traceback(exc_info[2]) from e
+  File "/home/user/telegramm-bot-es/.venv/lib/python3.11/site-packages/sqlalchemy/engine/base.py", line 1967, in _exec_single_context
+    self.dialect.do_execute(
+  File "/home/user/telegramm-bot-es/.venv/lib/python3.11/site-packages/sqlalchemy/engine/default.py", line 952, in do_execute
+    cursor.execute(statement, parameters)
+sqlalchemy.exc.OperationalError: (sqlite3.OperationalError) no such column: activities.is_deleted
+[SQL: SELECT activities.id AS activities_id, activities.ts AS activities_ts, activities.chat_id AS activities_chat_id, activities.chat_type AS activities_chat_type, activities.chat_title AS activities_chat_title, activities.thread_id AS activities_thread_id, activities.message_id AS activities_message_id, activities.user_id AS activities_user_id, activities.text AS activities_text, activities.msg_type AS activities_msg_type, activities.has_media AS activities_has_media, activities.media_kind AS activities_media_kind, activities.file_id AS activities_file_id, activities.is_command AS activities_is_command, activities.is_deleted AS activities_is_deleted, users_1.id AS users_1_id, users_1.username AS users_1_username, users_1.full_name AS users_1_full_name, users_1.first_seen AS users_1_first_seen, users_1.last_seen AS users_1_last_seen, users_1.is_blocked AS users_1_is_blocked 
+FROM activities LEFT OUTER JOIN users AS users_1 ON users_1.id = activities.user_id ORDER BY activities.ts DESC
+ LIMIT ? OFFSET ?]
+[parameters: (100, 0)]
+(Background on this error at: https://sqlalche.me/e/20/e3q8)
+2026-02-20 22:43:23,596 - web_dashboard.app - ERROR - Avatar proxy error: 404 Not Found: The requested URL was not found on the server. If you entered the URL manually please check your spelling and try again.
+2026-02-20 22:43:33,329 - web_dashboard.app - ERROR - Avatar proxy error: 404 Not Found: The requested URL was not found on the server. If you entered the URL manually please check your spelling and try again.
+2026-02-20 22:43:35,036 - web_dashboard.app - ERROR - Avatar proxy error: 404 Not Found: The requested URL was not found on the server. If you entered the URL manually please check your spelling and try again.
+2026-02-20 22:43:40,827 - web_dashboard.app - ERROR - Avatar proxy error: 404 Not Found: The requested URL was not found on the server. If you entered the URL manually please check your spelling and try again.
+2026-02-20 22:43:50,827 - web_dashboard.app - ERROR - Failed to delete message: {"ok":false,"error_code":400,"description":"Bad Request: message to delete not found"}
+2026-02-20 22:43:52,242 - web_dashboard.app - ERROR - Failed to delete message: {"ok":false,"error_code":400,"description":"Bad Request: message to delete not found"}
+2026-02-20 22:44:28,132 - web_dashboard.app - ERROR - Avatar proxy error: 404 Not Found: The requested URL was not found on the server. If you entered the URL manually please check your spelling and try again.
+2026-02-20 22:45:10,194 - web_dashboard.app - ERROR - Avatar proxy error: 404 Not Found: The requested URL was not found on the server. If you entered the URL manually please check your spelling and try again.
+2026-02-20 22:45:30,743 - web_dashboard.app - ERROR - Avatar proxy error: 404 Not Found: The requested URL was not found on the server. If you entered the URL manually please check your spelling and try again.
+2026-02-20 22:45:34,689 - web_dashboard.app - ERROR - Avatar proxy error: 404 Not Found: The requested URL was not found on the server. If you entered the URL manually please check your spelling and try again.
+2026-02-20 22:48:02,807 - web_dashboard.app - ERROR - Avatar proxy error: 404 Not Found: The requested URL was not found on the server. If you entered the URL manually please check your spelling and try again.
+2026-02-20 22:48:05,635 - web_dashboard.app - ERROR - Avatar proxy error: 404 Not Found: The requested URL was not found on the server. If you entered the URL manually please check your spelling and try again.
+2026-02-20 22:48:13,391 - web_dashboard.app - ERROR - Avatar proxy error: 404 Not Found: The requested URL was not found on the server. If you entered the URL manually please check your spelling and try again.
+2026-02-20 22:48:15,118 - web_dashboard.app - ERROR - Avatar proxy error: 404 Not Found: The requested URL was not found on the server. If you entered the URL manually please check your spelling and try again.
+2026-02-20 22:48:16,208 - web_dashboard.app - ERROR - Avatar proxy error: 404 Not Found: The requested URL was not found on the server. If you entered the URL manually please check your spelling and try again.
+2026-02-20 22:48:26,678 - web_dashboard.app - ERROR - Avatar proxy error: 404 Not Found: The requested URL was not found on the server. If you entered the URL manually please check your spelling and try again.
+2026-02-20 22:48:28,445 - web_dashboard.app - ERROR - Avatar proxy error: 404 Not Found: The requested URL was not found on the server. If you entered the URL manually please check your spelling and try again.
+2026-02-20 22:48:31,476 - web_dashboard.app - ERROR - Avatar proxy error: 404 Not Found: The requested URL was not found on the server. If you entered the URL manually please check your spelling and try again.
+2026-02-20 22:48:41,808 - web_dashboard.app - ERROR - Avatar proxy error: 404 Not Found: The requested URL was not found on the server. If you entered the URL manually please check your spelling and try again.
+2026-02-20 22:48:43,156 - web_dashboard.app - ERROR - Avatar proxy error: 404 Not Found: The requested URL was not found on the server. If you entered the URL manually please check your spelling and try again.
+2026-02-20 22:48:52,223 - web_dashboard.app - ERROR - Avatar proxy error: 404 Not Found: The requested URL was not found on the server. If you entered the URL manually please check your spelling and try again.

@@ -11,7 +11,7 @@ BOT_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.dirname(os.path.dirname(BOT_DIR))
 sys.path.append(PROJECT_ROOT)
 
-from database import SessionLocal, User, Activity, Topic, Broadcast, ModerationLog
+from database import SessionLocal, User, Activity, Topic, Broadcast, ModerationLog, init_db
 
 DATA_DIR = os.path.join(PROJECT_ROOT, "data")
 os.makedirs(DATA_DIR, exist_ok=True)
@@ -120,6 +120,7 @@ async def update_topic_db(chat_id: int, topic_id: int, name: str):
 
 # --- Topic Registry ---
 async def update_topic_registry(chat_id: int, chat_title: str, topic_id: int, topic_name: str):
+    if not topic_name: topic_name = f"Topic {topic_id}"
     await update_topic_db(chat_id, topic_id, topic_name)
     logger.info(f"Topic '{topic_name}' ({topic_id}) in Gruppe '{chat_title}' ({chat_id}) registriert/aktualisiert.")
 
@@ -127,7 +128,7 @@ async def handle_topic_creation(update: Update, context: ContextTypes.DEFAULT_TY
     if update.message and update.message.forum_topic_created:
         topic: ForumTopic = update.message.forum_topic_created
         chat = update.effective_chat
-        await update_topic_registry(chat.id, chat.title, topic.message_thread_id, topic.name)
+        await update_topic_registry(chat.id, chat.title, update.message.message_thread_id, topic.name)
 
 # --- Broadcast Engine ---
 async def update_broadcast_status(broadcast_id: str, new_status: str, sent_at: str = None, error_msg: str = None):
@@ -178,7 +179,12 @@ async def send_scheduled_broadcast(context: ContextTypes.DEFAULT_TYPE, broadcast
 async def track_activity(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg, user, chat = update.effective_message, update.effective_user, update.effective_chat
     if not all([msg, user, chat]): return
+    
+    # Check if logging is enabled
     if not CONFIG_CACHE.get("message_logging_enabled", True): return
+
+    # --- SQL User Update ---
+    await update_user_db(user.id, user.username, user.full_name)
 
     # --- Topic/Group Auto-Discovery ---
     if chat.type in ["group", "supergroup"]:
@@ -188,16 +194,17 @@ async def track_activity(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         if chat.is_forum and msg.message_thread_id:
             topic_id = msg.message_thread_id
-            try:
-                forum_topic = await context.bot.get_forum_topic(chat_id=chat.id, message_thread_id=topic_id)
-                topic_name = forum_topic.name
-            except Exception:
-                topic_name = f"Topic-{topic_id}"
-        
-        await update_topic_registry(chat.id, chat_title, topic_id, topic_name)
-
-    # --- SQL User Update ---
-    await update_user_db(user.id, user.username, user.full_name)
+            
+            # Try to get topic name from DB first to avoid API spam if possible, or just log activity
+            # We can't easily get topic name from message unless it's the creation message or we ask API
+            # Asking API for every message is heavy. 
+            # Strategy: If it's a new topic_id we haven't seen in this run, maybe try to fetch?
+            # For now, we rely on `handle_topic_creation` or manual naming. 
+            # Fallback name:
+            topic_name = f"Topic {topic_id}"
+            
+            # We update registry anyway to ensure it exists in DB
+            await update_topic_registry(chat.id, chat_title, topic_id, topic_name)
 
     # --- SQL Activity Log ---
     has_media = bool(msg.photo or msg.video or msg.document or msg.sticker or msg.voice or msg.audio or msg.animation)
@@ -219,7 +226,7 @@ async def track_activity(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "message_id": msg.message_id,
         "user_id": user.id,
         "text": msg.text or msg.caption or "",
-        "msg_type": "text" if msg.text else (media_kind or "unknown"),
+        "msg_type": "text" if (msg.text or msg.caption) else (media_kind or "unknown"),
         "has_media": has_media,
         "media_kind": media_kind,
         "file_id": file_id,
@@ -230,10 +237,20 @@ async def track_activity(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # --- Commands ---
 async def get_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
+    msg = update.effective_message
+    topic_id = msg.message_thread_id
+    topic_name = "General/Kein Topic"
+    
+    if topic_id and update.effective_chat.is_forum:
+        try:
+            # Try to fetch real name if possible, or use ID
+            topic_name = f"Topic ID {topic_id}"
+        except: pass
+
+    await msg.reply_text(
         f"👤 *Benutzer-ID:* `{update.effective_user.id}`\n"
         f"💬 *Chat-ID:* `{update.effective_chat.id}`\n"
-        f"🏷️ *Topic-ID:* `{update.effective_message.message_thread_id or 'Kein Topic'}`",
+        f"🏷️ *Topic:* `{topic_name}`",
         parse_mode="Markdown"
     )
 
@@ -253,8 +270,13 @@ def main():
 
     app = ApplicationBuilder().token(config["bot_token"]).build()
     
+    # Handle all messages to log them
     app.add_handler(MessageHandler(filters.ALL & ~filters.COMMAND, track_activity))
+    
+    # Handle commands separately if needed, but track_activity handles command logging manually if configured
     app.add_handler(CommandHandler("id", get_id))
+    
+    # Specific handlers
     app.add_handler(MessageHandler(filters.StatusUpdate.FORUM_TOPIC_CREATED, handle_topic_creation))
 
     logger.info("ID-Finder Bot startet (SQL Mode)...")
