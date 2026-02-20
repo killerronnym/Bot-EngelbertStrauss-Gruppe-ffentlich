@@ -4,9 +4,19 @@ from sqlalchemy import Column, Integer, String, Boolean, DateTime, Text, Foreign
 from sqlalchemy.orm import declarative_base, sessionmaker, relationship
 from sqlalchemy import create_engine
 
-# Path to the SQLite database file
-PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
-DB_PATH = os.path.join(PROJECT_ROOT, "data", "bot_database.db")
+# Determine Database Path
+# Priority 1: Environment Variable
+# Priority 2: /data/engelbot.db (Docker Volume)
+# Priority 3: Local data/bot_database.db (Dev Env)
+
+if os.environ.get("SQLITE_DB_PATH"):
+    DB_PATH = os.environ.get("SQLITE_DB_PATH")
+elif os.path.exists("/data") and os.access("/data", os.W_OK):
+    DB_PATH = "/data/engelbot.db"
+else:
+    PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
+    DB_PATH = os.path.join(PROJECT_ROOT, "data", "bot_database.db")
+
 os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
 
 Base = declarative_base()

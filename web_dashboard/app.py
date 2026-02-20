@@ -23,7 +23,7 @@ PROJECT_ROOT = os.path.dirname(BASE_DIR)
 if BASE_DIR not in sys.path: sys.path.append(BASE_DIR)
 if PROJECT_ROOT not in sys.path: sys.path.append(PROJECT_ROOT)
 
-from database import SessionLocal, User, Activity, Topic, Broadcast, ModerationLog
+from database import SessionLocal, User, Activity, Topic, Broadcast, ModerationLog, init_db
 from updater import Updater
 
 # --- App Setup ---
@@ -71,6 +71,10 @@ MATCH_CONFIG = {
     "id_finder": {"pattern": "id_finder_bot.py", "script": os.path.join(BOTS_DIR, "id_finder_bot", "id_finder_bot.py"), "log": os.path.join(BOTS_DIR, "id_finder_bot", "id_finder_bot.log")},
     "minecraft": {"pattern": "minecraft_bridge.py", "script": os.path.join(BOTS_DIR, "id_finder_bot", "minecraft_bridge.py"), "log": os.path.join(BOTS_DIR, "id_finder_bot", "minecraft_bridge.log")},
 }
+
+# --- Database Init ---
+with app.app_context():
+    init_db()
 
 # --- Helpers ---
 def load_json(path, default=None):
