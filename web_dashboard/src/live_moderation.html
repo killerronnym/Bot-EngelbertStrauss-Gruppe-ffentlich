@@ -1,0 +1,251 @@
+{% extends "base.html" %}
+
+{% block title %}Live Moderation{% endblock %}
+
+{% block content %}
+<style>
+    :root {
+        --moderation-bg: #0F172A;
+        --sidebar-bg: #1E293B;
+        --chat-bg: #0F172A;
+        --message-bubble-bg: #1E293B;
+        --message-hover-bg: #334155;
+        --text-bright: #F1F5F9;
+        --text-muted: #94A3B8;
+        --border-color: #334155;
+        --accent-color: #38BDF8;
+        --deleted-color: #e53e3e;
+    }
+
+    .moderation-layout { display: flex; height: calc(100vh - 70px); gap: 1rem; padding: 1rem; background-color: var(--moderation-bg); }
+    .sidebar { flex: 0 0 320px; background-color: var(--sidebar-bg); border-radius: 12px; padding: 1rem; overflow-y: auto; border: 1px solid var(--border-color); }
+    .sidebar h5 { color: var(--text-bright); padding-bottom: 0.75rem; border-bottom: 1px solid var(--border-color); margin-bottom: 1rem; }
+    .topic-list .list-group-item { background-color: transparent; border: none; color: var(--text-muted); padding: 0.6rem 1rem; border-radius: 8px; font-weight: 500; cursor: pointer; display: block; text-decoration: none; margin-bottom: 2px; }
+    .topic-list .list-group-item:hover { background-color: var(--message-hover-bg); color: var(--text-bright); }
+    .topic-list .list-group-item.active { background-color: var(--accent-color); color: #0F172A; font-weight: 700; }
+    .chat-container { flex-grow: 1; background-color: var(--chat-bg); border-radius: 12px; display: flex; flex-direction: column; border: 1px solid var(--border-color); }
+    .chat-header { padding: 1rem 1.5rem; border-bottom: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center; }
+    .chat-header h4 { margin: 0; color: var(--text-bright); }
+    .message-feed { flex-grow: 1; overflow-y: auto; padding: 1.5rem; }
+    .message-bubble { display: flex; gap: 1rem; margin-bottom: 0.5rem; padding: 0.75rem; border-radius: 12px; transition: background-color 0.2s; }
+    .message-bubble:hover { background-color: var(--message-bubble-bg); }
+    .message-bubble.deleted .message-actions .btn-danger { visibility: hidden; }
+    .message-bubble.deleted .message-text, .message-bubble.deleted .message-media { opacity: 0.6; }
+    .deleted-indicator { color: var(--deleted-color); font-size: 0.85rem; margin-top: 0.3rem; font-style: italic; }
+    .message-bubble .avatar { width: 42px; height: 42px; border-radius: 50%; flex-shrink: 0; object-fit: cover; }
+    .message-header { display: flex; align-items: center; gap: 0.75rem; margin-bottom: 0.3rem; }
+    .message-header .user-name { font-weight: 700; color: var(--text-bright); }
+    .message-header .timestamp { font-size: 0.75rem; color: var(--accent-color); }
+    .message-text { color: var(--text-muted); white-space: pre-wrap; word-break: break-word; }
+    .message-media img { max-width: 100%; max-height: 450px; border-radius: 12px; margin-top: 0.75rem; }
+    .message-actions { opacity: 0; margin-left: auto; transition: opacity 0.2s; }
+    .message-bubble:hover .message-actions { opacity: 1; }
+    .message-actions .btn { background: var(--message-hover-bg); border: 1px solid var(--border-color); color: var(--text-muted); }
+    .modal-content { background-color: var(--sidebar-bg); color: var(--text-bright); border-color: var(--border-color); }
+    .form-control, .form-select { background-color: #0F172A; border-color: var(--border-color); color: white; }
+</style>
+
+<div class="moderation-layout">
+    <aside class="sidebar">
+        <h5 class="fw-bold"><i class="bi bi-chat-left-text-fill me-2"></i>Kanäle</h5>
+        <ul class="list-group topic-list mb-4">
+             <a href="{{ url_for('live_moderation', topic_id='all') }}"
+                class="list-group-item {% if selected_topic_id == 'all' or not selected_topic_id %}active{% endif %}">
+                🌐 Alle Nachrichten
+             </a>
+        </ul>
+        {% for chat_id, chat_data in topics.items() %}
+            <div class="mb-3">
+                <h6 class="px-2 text-primary small fw-bold">{{ chat_data.name }}</h6>
+                <ul class="list-group topic-list">
+                    {% if chat_data.topics and chat_data.topics is mapping %}
+                        {% for topic_id, topic_name in chat_data.topics.items() %}
+                            <a href="{{ url_for('live_moderation', chat_id=chat_id, topic_id=topic_id) }}" 
+                               class="list-group-item {% if selected_chat_id == chat_id|string and selected_topic_id == topic_id|string %}active{% endif %}">
+                                {{ topic_name }}
+                            </a>
+                        {% endfor %}
+                    {% endif %}
+                </ul>
+            </div>
+        {% endfor %}
+    </aside>
+
+    <main class="chat-container">
+        <header class="chat-header">
+            <h4>Live Moderation</h4>
+            <div>
+                <a href="{{ url_for('live_moderation', chat_id=selected_chat_id, topic_id=selected_topic_id) }}" class="btn btn-outline-secondary btn-sm">
+                    <i class="bi bi-arrow-clockwise"></i> Aktualisieren
+                </a>
+                <a href="{{ url_for('index') }}" class="btn btn-outline-secondary btn-sm">
+                    <i class="bi bi-arrow-left"></i> Zurück zum Dashboard
+                </a>
+                <button class="btn btn-outline-info btn-sm" data-bs-toggle="modal" data-bs-target="#configModal">
+                    <i class="bi bi-gear-fill"></i> Moderations-Einstellungen
+                </button>
+            </div>
+        </header>
+
+        <div class="message-feed">
+            {% for msg in messages %}
+            <div class="message-bubble {% if msg.is_deleted %}deleted{% endif %}">
+                <img src="{{ url_for('tg_avatar_proxy', user_id=msg.user_id) }}" class="avatar" alt="A">
+                <div class="message-content flex-grow-1">
+                    <div class="message-header">
+                        <span class="user-name">{{ msg.full_name or msg.username or msg.user_id }}</span>
+                        <span class="timestamp">{{ msg.ts | datetimeformat("%H:%M:%S | %d.%m.%Y") }}</span>
+                    </div>
+                    {% if msg.text %}<div class="message-text">{{ msg.text }}</div>{% endif %}
+
+                    {% set file_id = msg.get('file_id') or (msg.get('media') and msg.get('media').get('file_id')) %}
+                    {% if (msg.get('media_kind') == 'photo' or (msg.get('media') and msg.get('media').get('kind') == 'photo')) and file_id %}
+                    <div class="message-media">
+                        <img src="{{ url_for('tg_media_proxy', file_id=file_id) }}" alt="Bild">
+                    </div>
+                    {% endif %}
+
+                    {% if msg.is_deleted %}
+                    <div class="deleted-indicator">
+                        <i class="bi bi-trash-fill"></i> Nachricht wurde von einem Moderator entfernt.
+                    </div>
+                    {% endif %}
+                </div>
+                <div class="message-actions">
+                    <a href="{{ url_for('user_detail', user_id=msg.user_id) }}" class="btn btn-sm btn-outline-primary">
+                        <i class="bi bi-person-fill"></i> Details
+                    </a>
+                    <button class="btn btn-sm btn-danger"
+                            onclick="openDeleteModal('{{ msg.user_id }}', '{{ msg.chat_id }}', '{{ msg.msg_id or msg.message_id }}', '{{ (msg.full_name or msg.username)|escape }}', '{{ (topics.get(msg.chat_id|string, {}).get('name', 'Unbekannte Gruppe'))|escape }}', '{{ msg.thread_id or '' }}')">
+                        <i class="bi bi-trash-fill"></i> Löschen
+                    </button>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </main>
+</div>
+
+<!-- Config & Delete Modals -->
+<div class="modal fade" id="configModal" tabindex="-1" aria-labelledby="configModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="configModalLabel">Moderations-Einstellungen</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form action="{{ url_for('live_moderation_config') }}" method="post">
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label for="max_warnings" class="form-label">Anzahl Verwarnungen bis zum Bann</label>
+                        <input type="number" class="form-control" id="max_warnings" name="max_warnings" value="{{ mod_config.max_warnings | default(3) }}" min="1">
+                        <div class="form-text">Legt fest, nach wie vielen Verwarnungen ein Nutzer automatisch aus der Gruppe gebannt wird.</div>
+                    </div>
+                    <hr class="my-4">
+                    <div class="mb-3">
+                        <label for="warning_text" class="form-label">Verwarnungstext (DM an Nutzer)</label>
+                        <textarea class="form-control" id="warning_text" name="warning_text" rows="3" placeholder="Beispiel: Hallo {user}, deine Nachricht in der Gruppe {group} wurde entfernt. Grund: {reason}. Dies ist deine {warn_count} von {max_warnings} Verwarnungen.">{{ mod_config.warning_text }}</textarea>
+                        <div class="form-text">
+                            Verfügbare Platzhalter: 
+                            <code>{user}</code>, <code>{group}</code>, <code>{reason}</code>, <code>{warn_count}</code>, <code>{max_warnings}</code>
+                        </div>
+                    </div>
+                    <hr class="my-4">
+                    <h6 class="fw-bold">Öffentlicher Löschhinweis (im Topic)</h6>
+                    <div class="mb-3">
+                        <label for="public_delete_notice_text" class="form-label">Hinweistext</label>
+                        <textarea class="form-control" id="public_delete_notice_text" name="public_delete_notice_text" rows="3">{{ mod_config.public_delete_notice_text | default('Die Nachricht von {user} wurde gelöscht. Grund: {reason}') }}</textarea>
+                        <div class="form-text">
+                            Verfügbare Platzhalter: 
+                            <code>{user}</code>, <code>{reason}</code>
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label for="public_delete_notice_duration" class="form-label">Anzeigedauer (Sekunden)</label>
+                        <input type="number" class="form-control" id="public_delete_notice_duration" name="public_delete_notice_duration" value="{{ mod_config.public_delete_notice_duration | default(60) }}" min="0">
+                        <div class="form-text">0 bedeutet, dass die Nachricht dauerhaft stehen bleibt.</div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Abbrechen</button>
+                    <button type="submit" class="btn btn-primary">Speichern</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="deleteModal" tabindex="-1" aria-labelledby="deleteModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="deleteModalLabel">Nachricht von <span id="modal_user_name"></span> löschen</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form action="{{ url_for('live_moderation_delete') }}" method="post">
+                <div class="modal-body">
+                    <input type="hidden" name="user_id" id="modal_user_id">
+                    <input type="hidden" name="chat_id" id="modal_chat_id">
+                    <input type="hidden" name="message_id" id="modal_message_id">
+                    <input type="hidden" name="topic_id" id="modal_topic_id">
+                    <input type="hidden" name="user_name" id="modal_user_name_hidden">
+                    <input type="hidden" name="chat_name" id="modal_chat_name_hidden">
+                    
+                    <p>Wähle eine Aktion aus:</p>
+                    
+                    <div class="form-check">
+                        <input class="form-check-input" type="radio" name="action" id="action_delete" value="delete" checked onchange="toggleReasonVisibility(true)">
+                        <label class="form-check-label" for="action_delete">Nur Nachricht löschen (mit Grund)</label>
+                    </div>
+                    <div class="form-check">
+                        <input class="form-check-input" type="radio" name="action" id="action_warn" value="warn" onchange="toggleReasonVisibility(true)">
+                        <label class="form-check-label" for="action_warn">Nachricht löschen und Nutzer verwarnen</label>
+                    </div>
+
+                    <div id="reason_container" style="display: block; margin-top: 1.5rem;">
+                        <label for="reason_preset" class="form-label">Grund</label>
+                        <select class="form-select" name="reason_preset" id="reason_preset" onchange="toggleCustomReason(this.value)">
+                            <option value="Spam">Spam</option>
+                            <option value="Off-Topic">Off-Topic</option>
+                            <option value="Unerlaubte Werbung">Unerlaubte Werbung</option>
+                            <option value="Beleidigung">Beleidigung</option>
+                            <option value="other">Sonstiges</option>
+                        </select>
+                        <div id="custom_reason_container" style="display: none; margin-top: 1rem;">
+                            <label for="reason_custom" class="form-label">Benutzerdefinierter Grund</label>
+                            <textarea class="form-control" name="reason_custom" id="reason_custom" rows="3"></textarea>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Abbrechen</button>
+                    <button type="submit" class="btn btn-danger">Aktion ausführen</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+    function openDeleteModal(uid, cid, mid, name, chat_name, tid) {
+        document.getElementById('modal_user_id').value = uid;
+        document.getElementById('modal_chat_id').value = cid;
+        document.getElementById('modal_message_id').value = mid;
+        document.getElementById('modal_topic_id').value = tid;
+        document.getElementById('modal_user_name').innerText = name;
+        document.getElementById('modal_user_name_hidden').value = name;
+        document.getElementById('modal_chat_name_hidden').value = chat_name;
+        var deleteModal = new bootstrap.Modal(document.getElementById('deleteModal'));
+        deleteModal.show();
+    }
+
+    function toggleReasonVisibility(show) {
+        // Reason container is now always visible since we need a reason for the public notice too
+        document.getElementById('reason_container').style.display = 'block';
+    }
+
+    function toggleCustomReason(selectedValue) {
+        document.getElementById('custom_reason_container').style.display = selectedValue === 'other' ? 'block' : 'none';
+    }
+</script>
+{% endblock %}

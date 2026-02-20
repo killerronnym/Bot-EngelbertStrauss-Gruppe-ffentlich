@@ -1,0 +1,13 @@
+# Dev environment
+pip
+autopep8
+
+# App
+flask
+python-telegram-bot
+APScheduler
+pytz
+pyTelegramBotAPI
+schedule
+mcstatus
+gunicorn

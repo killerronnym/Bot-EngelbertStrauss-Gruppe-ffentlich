@@ -1,0 +1,291 @@
+{% extends "base.html" %}
+
+{% block title %}Invite Bot | Administration{% endblock %}
+
+{% block content %}
+<style>
+    .dashboard-container { padding: 2.5rem; }
+    .btn-back { background: rgba(255, 255, 255, 0.02); border: 1px solid var(--border-muted); color: var(--text-secondary); font-weight: 500; border-radius: 8px; padding: 0.6rem 1.25rem; transition: all 0.2s ease; text-decoration: none; display: inline-flex; align-items: center; gap: 0.6rem; font-size: 0.85rem; }
+    .btn-back:hover { background: rgba(255, 255, 255, 0.05); color: #fff; border-color: var(--blue-accent); }
+    .status-badge-container { background: rgba(0, 0, 0, 0.3); border: 1px solid var(--border-muted); padding: 0.4rem 1.2rem; border-radius: 30px; display: inline-flex; align-items: center; gap: 0.6rem; }
+    .log-display { background: #000; color: #a5b4fc; font-family: 'JetBrains Mono', monospace; font-size: 0.75rem; padding: 1rem; border-radius: 8px; border: 1px solid #1e293b; line-height: 1.5; }
+    .move-arrow { color: var(--text-dim); cursor: pointer; padding: 2px; }
+    .move-arrow:hover { color: var(--blue-accent); }
+    code { background: rgba(59, 130, 246, 0.08); color: var(--blue-accent); padding: 0.2rem 0.4rem; border-radius: 4px; font-size: 0.85rem; }
+</style>
+
+<div class="dashboard-container">
+    <div class="d-flex justify-content-between align-items-start mb-5">
+        <div>
+            <a href="/" class="btn-back mb-4"><i class="bi bi-chevron-left"></i> ZURÜCK ZUR ÜBERSICHT</a>
+            <h1 class="fw-bold mb-1 h3 text-white">Invite <span class="text-blue">Zentrale</span></h1>
+            <p class="text-secondary small">Systemkonfiguration & Interaktionsanalyse</p>
+        </div>
+        <div class="status-badge-container mt-2">
+            {% if is_invite_running %}
+                <span class="rounded-circle bg-success" style="width: 8px; height: 8px; box-shadow: 0 0 8px #10b981;"></span>
+                <span class="small fw-bold text-success tracking-wider">AKTIV</span>
+            {% else %}
+                <span class="rounded-circle bg-danger" style="width: 8px; height: 8px;"></span>
+                <span class="small fw-bold text-danger tracking-wider">OFFLINE</span>
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="row g-4">
+        <div class="col-lg-4">
+            <div class="card mb-4">
+                <div class="card-header"><h6>Steuerung</h6></div>
+                <div class="card-body">
+                    <div class="d-flex gap-2 mb-4 pb-4 border-bottom border-white border-opacity-5">
+                        <form action="/bot-settings" method="POST" class="flex-grow-1">
+                            <input type="hidden" name="action" value="start_invite_bot">
+                            <button type="submit" class="btn btn-success w-100 fw-bold py-2 shadow-sm" {% if is_invite_running %}disabled{% endif %}>START</button>
+                        </form>
+                        <form action="/bot-settings" method="POST" class="flex-grow-1">
+                            <input type="hidden" name="action" value="stop_invite_bot">
+                            <button type="submit" class="btn btn-danger w-100 fw-bold py-2 shadow-sm" {% if not is_invite_running %}disabled{% endif %}>STOP</button>
+                        </form>
+                    </div>
+
+                    <form action="/bot-settings" method="POST">
+                        <input type="hidden" name="action" value="save_base_config">
+                        <div class="form-check form-switch mb-4 p-2 ps-5 rounded border border-white border-opacity-5" style="background: rgba(255,255,255,0.01);">
+                            <input class="form-check-input" type="checkbox" id="is_enabled" name="is_enabled" {% if config.is_enabled %}checked{% endif %}>
+                            <label class="form-check-label small fw-bold" for="is_enabled">Bot-Dienst aktiv</label>
+                        </div>
+                        <div class="mb-3">
+                            <label class="small text-secondary fw-bold mb-1">BOT TOKEN</label>
+                            <input type="password" class="form-control form-control-sm" name="bot_token" value="{{ config.bot_token or '' }}">
+                        </div>
+                        <div class="mb-3">
+                            <label class="small text-secondary fw-bold mb-1">GRUPPEN-ID</label>
+                            <input type="text" class="form-control form-control-sm" name="main_chat_id" value="{{ config.main_chat_id or '' }}">
+                        </div>
+                        <div class="row g-2 mb-4">
+                            <div class="col-6"><label class="small text-secondary fw-bold mb-1">TOPIC</label><input type="text" class="form-control form-control-sm" name="topic_id" value="{{ config.topic_id or '' }}"></div>
+                            <div class="col-6"><label class="small text-secondary fw-bold mb-1">TTL (MIN)</label><input type="number" class="form-control form-control-sm" name="link_ttl_minutes" value="{{ config.link_ttl_minutes or 15 }}"></div>
+                        </div>
+                        <button type="submit" class="btn-blue-action w-100">KONFIGURATION SICHERN</button>
+                    </form>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header"><h6>Inhalte & Texte</h6></div>
+                <div class="card-body">
+                    <form action="/bot-settings/save-content" method="POST">
+                        <div class="mb-3">
+                            <label class="small text-secondary fw-bold mb-1">Begrüßung (/start)</label>
+                            <textarea class="form-control font-monospace" name="start_message" rows="4">{{ config.start_message or '' }}</textarea>
+                        </div>
+                        <div class="mb-3">
+                            <label class="small text-secondary fw-bold mb-1">Regeln (Ende)</label>
+                            <textarea class="form-control font-monospace" name="rules_message" rows="4">{{ config.rules_message or '' }}</textarea>
+                        </div>
+                        <div class="mb-3">
+                            <label class="small text-secondary fw-bold mb-1">Nachricht bei Sperre</label>
+                            <textarea class="form-control font-monospace" name="blocked_message" rows="4">{{ config.blocked_message or '' }}</textarea>
+                            <div class="form-text small text-white-50">Wird gesendet, wenn ein gebannter User /letsgo schreibt.</div>
+                        </div>
+                        <div class="mb-3">
+                            <label class="small text-secondary fw-bold mb-1">Datenschutz</label>
+                            <textarea class="form-control font-monospace" name="privacy_policy" rows="5">{{ config.privacy_policy or '' }}</textarea>
+                        </div>
+                        <button type="submit" class="btn-blue-action w-100">TEXTE SPEICHERN</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-lg-8">
+            <div class="card mb-4">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h6>Profil-Abfragen</h6>
+                    <button class="btn btn-success btn-sm fw-bold px-3 shadow-sm rounded-pill" data-bs-toggle="modal" data-bs-target="#addFieldModal">+ NEUES FELD</button>
+                </div>
+                <div class="card-body p-0">
+                    <div class="table-responsive">
+                        <table class="table table-dark table-hover align-middle mb-0" style="--bs-table-bg: transparent;">
+                            <thead>
+                                <tr>
+                                    <th style="width: 70px" class="text-center small text-secondary fw-bold">POS</th>
+                                    <th class="small text-secondary fw-bold">ID</th>
+                                    <th class="small text-secondary fw-bold">BOT-FRAGE / ANZEIGENAME</th>
+                                    <th class="small text-secondary fw-bold">TYP</th>
+                                    <th class="text-center small text-secondary fw-bold">REQR</th>
+                                    <th class="text-end pe-4 small text-secondary fw-bold">AKTION</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for field in config.form_fields %}
+                                <tr class="{% if not field.enabled %}opacity-25{% endif %}" style="border-bottom: 1px solid rgba(255,255,255,0.03) !important;">
+                                    <td class="text-center">
+                                        <div class="d-flex flex-column align-items-center">
+                                            {% if not loop.first %}<a href="{{ url_for('invite_bot_move_field', field_id=field.id, direction='up') }}" class="move-arrow"><i class="bi bi-caret-up-fill"></i></a>{% endif %}
+                                            <small class="fw-bold">{{ loop.index }}</small>
+                                            {% if not loop.last %}<a href="{{ url_for('invite_bot_move_field', field_id=field.id, direction='down') }}" class="move-arrow"><i class="bi bi-caret-down-fill"></i></a>{% endif %}
+                                        </div>
+                                    </td>
+                                    <td><code>{{ field.id }}</code></td>
+                                    <td>
+                                        <div class="small text-white-50 mb-1">{{ field.label[:60] }}...</div>
+                                        <div class="fw-bold text-info">{{ field.emoji or '🔹' }} {{ field.display_name or field.id|capitalize }}</div>
+                                    </td>
+                                    <td>
+                                        <div class="small text-secondary fw-bold text-uppercase">{{ field.type }}</div>
+                                        {% if field.min_age %}
+                                        <div class="small text-warning" style="font-size: 0.7em;">Min: {{ field.min_age }}J</div>
+                                        {% endif %}
+                                    </td>
+                                    <td class="text-center">{% if field.required %}<i class="bi bi-check-lg text-success"></i>{% else %}<i class="bi bi-dash text-secondary opacity-50"></i>{% endif %}</td>
+                                    <td class="text-end pe-4">
+                                        <div class="d-flex justify-content-end gap-2">
+                                            <button class="btn btn-outline-light btn-sm border-0" onclick="openEditModal('{{ field.id }}', '{{ field.label|e }}', '{{ field.type }}', {{ 'true' if field.required else 'false' }}, {{ 'true' if field.enabled else 'false' }}, '{{ field.emoji or '🔹' }}', '{{ field.display_name or '' }}', '{{ field.min_age or '' }}', '{{ field.min_age_error_msg or ''|e }}')"><i class="bi bi-pencil-square"></i></button>
+                                            <form action="/bot-settings/delete-field" method="POST" style="display:inline;"><input type="hidden" name="field_id" value="{{ field.id }}"><button type="submit" class="btn btn-outline-danger btn-sm border-0" onclick="return confirm('Löschen?');"><i class="bi bi-trash3"></i></button></form>
+                                        </div>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Logs Section -->
+            <div class="card mb-4">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h6>User Interaktionen (Live)</h6>
+                    <div class="d-flex align-items-center gap-2">
+                         <span class="badge bg-secondary">{{ user_interaction_logs|length }} Einträge</span>
+                         <form action="/bot-settings/clear-logs/user" method="POST">
+                             <button type="submit" class="btn btn-outline-danger btn-sm border-0 p-1" title="Logs löschen" onclick="return confirm('Wirklich alle User-Logs löschen?');"><i class="bi bi-trash"></i></button>
+                         </form>
+                    </div>
+                </div>
+                <div class="card-body bg-black p-0">
+                    <div class="log-display rounded-0 border-0" style="max-height: 400px; overflow-y: auto;">
+                        {% if user_interaction_logs %}
+                            {% for line in user_interaction_logs %}
+                                <div class="border-bottom border-white border-opacity-10 py-1 px-2" style="font-size: 0.8rem;">
+                                    {{ line }}
+                                </div>
+                            {% endfor %}
+                        {% else %}
+                            <div class="text-muted p-4 text-center">Keine aktuellen Interaktionen.</div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h6>System Logs (Technisch)</h6>
+                     <form action="/bot-settings/clear-logs/system" method="POST">
+                         <button type="submit" class="btn btn-outline-danger btn-sm border-0 p-1" title="Logs löschen" onclick="return confirm('Wirklich alle System-Logs löschen?');"><i class="bi bi-trash"></i></button>
+                     </form>
+                </div>
+                <div class="card-body bg-black p-0">
+                    <div class="log-display rounded-0 border-0" style="max-height: 300px; overflow-y: auto;">
+                        {% if invite_bot_logs %}
+                            {% for line in invite_bot_logs %}
+                                <div class="py-1 px-2 text-wrap" style="font-size: 0.75rem;">{{ line }}</div>
+                            {% endfor %}
+                        {% else %}
+                            <div class="text-muted p-4 text-center">Keine Logs verfügbar.</div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </div>
+</div>
+
+<!-- Modal: Neues Feld -->
+<div class="modal fade" id="addFieldModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content bg-dark border-secondary">
+            <form action="/bot-settings/add-field" method="POST">
+                <div class="modal-header border-secondary"><h5 class="modal-title text-white">Neues Feld hinzufügen</h5><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div>
+                <div class="modal-body">
+                    <div class="mb-3"><label class="form-label small">Eindeutige ID (z.B. age)</label><input type="text" class="form-control" name="field_id" required></div>
+                    <div class="mb-3"><label class="form-label small">Emoji (z.B. 👤)</label><input type="text" class="form-control" name="emoji" placeholder="🔹"></div>
+                    <div class="mb-3"><label class="form-label small">Anzeigename im Post (z.B. Name)</label><input type="text" class="form-control" name="display_name" required></div>
+                    <div class="mb-3"><label class="form-label small">Bot-Frage an den User</label><textarea class="form-control" name="label" rows="2" required></textarea></div>
+                    <div class="row mb-3">
+                        <div class="col-6"><label class="form-label small">Typ</label><select class="form-select" name="type"><option value="text">Text</option><option value="number">Zahl</option><option value="photo">Foto</option></select></div>
+                        <div class="col-6 d-flex align-items-end"><div class="form-check mb-2"><input class="form-check-input" type="checkbox" name="required" id="new_req" checked><label class="form-check-label small" for="new_req">Pflichtfeld</label></div></div>
+                    </div>
+                    
+                    <div class="border-top border-secondary pt-3 mt-3">
+                        <div class="small text-secondary fw-bold mb-2">ALTERSPRÜFUNG (Nur für Typ 'Zahl')</div>
+                        <div class="mb-2">
+                            <label class="form-label small">Mindestalter</label>
+                            <input type="number" class="form-control" name="min_age" placeholder="z.B. 12">
+                        </div>
+                        <div class="mb-2">
+                            <label class="form-label small">Fehlermeldung bei zu jung</label>
+                            <input type="text" class="form-control" name="min_age_error_msg" placeholder="⚠️ Du musst mindestens X Jahre alt sein.">
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer border-secondary"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Abbrechen</button><button type="submit" class="btn btn-success">Hinzufügen</button></div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Modal: Feld Bearbeiten -->
+<div class="modal fade" id="editFieldModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content bg-dark border-secondary">
+            <form action="/bot-settings/edit-field" method="POST">
+                <input type="hidden" name="field_id" id="edit_id">
+                <div class="modal-header border-secondary"><h5 class="modal-title text-white">Feld bearbeiten</h5><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div>
+                <div class="modal-body">
+                    <div class="mb-3"><label class="form-label small">Emoji</label><input type="text" class="form-control" name="emoji" id="edit_emoji"></div>
+                    <div class="mb-3"><label class="form-label small">Anzeigename im Post</label><input type="text" class="form-control" name="display_name" id="edit_display_name"></div>
+                    <div class="mb-3"><label class="form-label small">Bot-Frage</label><textarea class="form-control" name="label" id="edit_label" rows="2" required></textarea></div>
+                    <div class="row mb-3">
+                        <div class="col-6"><label class="form-label small">Typ</label><select class="form-select" name="type" id="edit_type_select"><option value="text">Text</option><option value="number">Zahl</option><option value="photo">Foto</option></select></div>
+                        <div class="col-6 d-flex flex-column justify-content-center gap-2 mt-3">
+                            <div class="form-check"><input class="form-check-input" type="checkbox" name="required" id="edit_required"><label class="form-check-label small" for="edit_required">Pflichtfeld</label></div>
+                            <div class="form-check"><input class="form-check-input" type="checkbox" name="enabled" id="edit_enabled"><label class="form-check-label small" for="edit_enabled">Aktiviert</label></div>
+                        </div>
+                    </div>
+
+                    <div class="border-top border-secondary pt-3 mt-3">
+                        <div class="small text-secondary fw-bold mb-2">ALTERSPRÜFUNG (Nur für Typ 'Zahl')</div>
+                        <div class="mb-2">
+                            <label class="form-label small">Mindestalter</label>
+                            <input type="number" class="form-control" name="min_age" id="edit_min_age" placeholder="z.B. 12">
+                        </div>
+                        <div class="mb-2">
+                            <label class="form-label small">Fehlermeldung bei zu jung</label>
+                            <input type="text" class="form-control" name="min_age_error_msg" id="edit_min_age_error_msg" placeholder="⚠️ Du musst mindestens X Jahre alt sein.">
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer border-secondary"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Abbrechen</button><button type="submit" class="btn btn-primary">Änderungen speichern</button></div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+function openEditModal(id, label, type, required, enabled, emoji, display_name, min_age, min_age_error_msg) {
+    document.getElementById('edit_id').value = id;
+    document.getElementById('edit_label').value = label;
+    document.getElementById('edit_type_select').value = type;
+    document.getElementById('edit_required').checked = required;
+    document.getElementById('edit_enabled').checked = enabled;
+    document.getElementById('edit_emoji').value = emoji;
+    document.getElementById('edit_display_name').value = display_name;
+    document.getElementById('edit_min_age').value = min_age;
+    document.getElementById('edit_min_age_error_msg').value = min_age_error_msg;
+    new bootstrap.Modal(document.getElementById('editFieldModal')).show();
+}
+</script>
+{% endblock %}
