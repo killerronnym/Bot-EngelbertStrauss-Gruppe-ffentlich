@@ -1,72 +1,141 @@
 {% extends "base.html" %}
 
-{% block title %}Nutzerdetails: {{ user.full_name or user.username or user.user_id }}{% endblock %}
+{% block title %}Nutzer-Details{% endblock %}
 
 {% block content %}
-<style>
-    .user-detail-header {
-        display: flex;
-        align-items: center;
-        gap: 1.5rem;
-        margin-bottom: 2rem;
-        padding-bottom: 1.5rem;
-        border-bottom: 1px solid var(--border-color);
-    }
-    .user-avatar {
-        width: 80px;
-        height: 80px;
-        border-radius: 50%;
-        object-fit: cover;
-    }
-    .warning-card {
-        background-color: var(--sidebar-bg);
-        border: 1px solid var(--border-color);
-        border-radius: 8px;
-        padding: 1.5rem;
-        margin-bottom: 1rem;
-    }
-    .warning-meta {
-        font-size: 0.9rem;
-        color: var(--text-muted);
-    }
-</style>
-
-<div class="container py-5">
-    <div class="d-flex justify-content-between align-items-center mb-4">
-        <h2 class="text-white">Nutzer-Aktivität</h2>
-        <a href="{{ url_for('live_moderation') }}" class="btn btn-outline-secondary">
-            <i class="bi bi-arrow-left"></i> Zurück zur Moderation
-        </a>
-    </div>
-
-    <div class="user-detail-header text-white">
-        <img src="{{ url_for('tg_avatar_proxy', user_id=user.user_id) }}" class="user-avatar" alt="Avatar">
-        <div>
-            <h3 class="mb-1">{{ user.full_name or user.username }}</h3>
-            <p class="text-muted mb-1">ID: <code>{{ user.user_id }}</code></p>
-            <p class="mb-0">
-                <span class="badge bg-danger">{{ warnings | length }} Verwarnungen</span>
-            </p>
+<div class="row">
+    <!-- User Info Card -->
+    <div class="col-md-4">
+        <div class="card bg-dark text-white mb-4">
+            <div class="card-header border-secondary">
+                <h5 class="card-title mb-0"><i class="bi bi-person-circle me-2"></i>Nutzer-Profil</h5>
+            </div>
+            <div class="card-body text-center">
+                <img src="{{ url_for('tg_avatar_proxy', user_id=user.id) }}" class="rounded-circle mb-3" width="120" height="120" alt="Avatar" onerror="this.src='https://ui-avatars.com/api/?name={{ user.username or user.id }}&background=random'">
+                <h4>{{ user.full_name or "Unbekannt" }}</h4>
+                <p class="text-muted">@{{ user.username or "kein_username" }}</p>
+                <span class="badge bg-secondary">ID: {{ user.id }}</span>
+                <hr class="border-secondary">
+                <div class="text-start">
+                    <p><i class="bi bi-clock-history me-2"></i>Zuletzt gesehen:<br><span class="text-info">{{ user.last_seen | datetimeformat }}</span></p>
+                    <p><i class="bi bi-calendar-check me-2"></i>Erster Kontakt:<br><span class="text-info">{{ user.first_seen | datetimeformat }}</span></p>
+                </div>
+            </div>
+            <div class="card-footer border-secondary">
+                <div class="d-grid gap-2">
+                    <form action="{{ url_for('id_finder_delete_user', user_id=user.id) }}" method="post" onsubmit="return confirm('Nutzer wirklich aus der Datenbank löschen?');">
+                        <button type="submit" class="btn btn-danger w-100"><i class="bi bi-trash"></i> Nutzer löschen</button>
+                    </form>
+                </div>
+            </div>
         </div>
     </div>
 
-    <h4 class="text-white mb-3">Verlauf der Verwarnungen</h4>
-
-    {% if warnings %}
-        {% for warning in warnings | reverse %}
-        <div class="warning-card">
-            <p class="fs-5 text-white mb-2"><strong>Grund:</strong> {{ warning.reason }}</p>
-            <p class="warning-meta">
-                Verwarnt am {{ warning.timestamp | datetimeformat }}
-                in der Gruppe <strong>{{ warning.chat_name }}</strong>
-            </p>
+    <!-- Stats & Activity -->
+    <div class="col-md-8">
+        <!-- Moderation History -->
+        <div class="card bg-dark text-white mb-4">
+            <div class="card-header border-secondary d-flex justify-content-between align-items-center">
+                <h5 class="card-title mb-0"><i class="bi bi-shield-exclamation me-2"></i>Moderations-Historie</h5>
+                <span class="badge bg-warning text-dark">{{ mod_logs|length }} Einträge</span>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-dark table-hover table-striped mb-0">
+                        <thead>
+                            <tr>
+                                <th>Zeitpunkt</th>
+                                <th>Aktion</th>
+                                <th>Grund</th>
+                                <th>Nachricht-ID</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% if mod_logs %}
+                                {% for log in mod_logs %}
+                                <tr>
+                                    <td>{{ log.ts | datetimeformat }}</td>
+                                    <td>
+                                        {% if log.action == 'warn' %}
+                                            <span class="badge bg-warning text-dark">Verwarnung</span>
+                                        {% elif log.action == 'delete' %}
+                                            <span class="badge bg-danger">Gelöscht</span>
+                                        {% else %}
+                                            <span class="badge bg-secondary">{{ log.action }}</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>{{ log.reason or "-" }}</td>
+                                    <td>{{ log.message_id or "-" }}</td>
+                                </tr>
+                                {% endfor %}
+                            {% else %}
+                                <tr>
+                                    <td colspan="4" class="text-center py-3 text-muted">Keine Verstöße verzeichnet.</td>
+                                </tr>
+                            {% endif %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
         </div>
-        {% endfor %}
-    {% else %}
-        <div class="alert alert-success">
-            <i class="bi bi-check-circle-fill"></i> Bisher keine Verwarnungen für diesen Nutzer.
-        </div>
-    {% endif %}
 
+        <!-- Activity Chart -->
+        <div class="card bg-dark text-white">
+            <div class="card-header border-secondary">
+                <h5 class="card-title mb-0"><i class="bi bi-graph-up me-2"></i>Aktivität (Letzte 30 Tage)</h5>
+            </div>
+            <div class="card-body">
+                <canvas id="userActivityChart" height="150"></canvas>
+            </div>
+        </div>
+    </div>
 </div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        fetch('/api/id-finder/user-activity/{{ user.id }}?days=30')
+            .then(response => response.json())
+            .then(data => {
+                const ctx = document.getElementById('userActivityChart').getContext('2d');
+                
+                // Process data map to sorted arrays
+                const sortedDates = Object.keys(data.timeline_map).sort();
+                const counts = sortedDates.map(date => data.timeline_map[date]);
+
+                new Chart(ctx, {
+                    type: 'line',
+                    data: {
+                        labels: sortedDates,
+                        datasets: [{
+                            label: 'Nachrichten',
+                            data: counts,
+                            borderColor: '#38BDF8',
+                            backgroundColor: 'rgba(56, 189, 248, 0.1)',
+                            borderWidth: 2,
+                            tension: 0.3,
+                            fill: true
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        plugins: {
+                            legend: { display: false }
+                        },
+                        scales: {
+                            y: {
+                                beginAtZero: true,
+                                grid: { color: '#334155' },
+                                ticks: { color: '#94A3B8' }
+                            },
+                            x: {
+                                grid: { display: false },
+                                ticks: { color: '#94A3B8' }
+                            }
+                        }
+                    }
+                });
+            });
+    });
+</script>
 {% endblock %}

@@ -271,18 +271,10 @@ def live_moderation_delete():
         )
         db.add(mod_log)
         
-        # Determine Warn Count (for placeholders)
-        warn_count = 0
-        if action == "warn":
-             warn_count = db.query(ModerationLog).filter(ModerationLog.user_id == int(user_id), ModerationLog.action == "warn").count() + 1
-             # We just added one, so +1? Or count including this one. Since we just added, count should be inclusive if we committed.
-             # Wait, we haven't committed mod_log yet.
-        
         db.commit() # Commit to get ID and save log
 
-        if action == "warn":
-             # Recount properly
-             warn_count = db.query(ModerationLog).filter(ModerationLog.user_id == int(user_id), ModerationLog.action == "warn").count()
+        # Determine Warn Count (for placeholders)
+        warn_count = db.query(ModerationLog).filter(ModerationLog.user_id == int(user_id), ModerationLog.action == "warn").count()
 
         # Send DM?
         if send_dm:
@@ -513,8 +505,10 @@ def id_finder_update_admin_permissions():
 def user_detail(user_id):
     with SessionLocal() as db:
         user = db.query(User).filter(User.id == int(user_id)).first()
+        mod_logs = db.query(ModerationLog).filter(ModerationLog.user_id == int(user_id)).order_by(ModerationLog.ts.desc()).all()
+        
         if not user: abort(404)
-        return render_template("id_finder_user_detail.html", user=user)
+        return render_template("id_finder_user_detail.html", user=user, mod_logs=mod_logs)
 
 @app.route("/id-finder/delete-user/<user_id>", methods=["POST"])
 @login_required
