@@ -348,7 +348,7 @@
                     <div class="progress" style="height: 10px; background-color: #334155; border-radius: 5px;">
                         <div id="progressBar" class="progress-bar progress-bar-striped progress-bar-animated bg-primary" style="width: 0%"></div>
                     </div>
-                    <p class="text-warning small mt-3 text-center mb-0">
+                    <p id="updateWarningText" class="text-warning small mt-3 text-center mb-0">
                         <i class="bi bi-exclamation-triangle-fill me-1"></i> 
                         Bitte die Seite nicht schließen. Die App startet nach dem Update automatisch neu.
                     </p>
@@ -433,30 +433,84 @@
         document.getElementById('updateActionArea').style.display = 'none';
         document.getElementById('updateProgressArea').style.display = 'block';
 
-        const resp = await fetch('/api/update/install', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify(updateInfo)
-        });
+        try {
+            const resp = await fetch('/api/update/install', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(updateInfo)
+            });
 
-        if (resp.ok) { pollUpdateStatus(); } 
-        else { alert("Fehler beim Starten des Updates."); location.reload(); }
+            if (resp.ok) { 
+                pollUpdateStatus(); 
+            } else { 
+                alert("Fehler beim Starten des Updates."); 
+                location.reload(); 
+            }
+        } catch (e) {
+            alert("Verbindung zum Server unterbrochen.");
+            location.reload();
+        }
     };
 
     async function pollUpdateStatus() {
+        const progressBar = document.getElementById('progressBar');
+        const progressPercent = document.getElementById('progressPercent');
+        const progressText = document.getElementById('progressText');
+        const warningText = document.getElementById('updateWarningText');
+
         const interval = setInterval(async () => {
-            const resp = await fetch('/api/update/status');
-            const data = await resp.json();
-            document.getElementById('progressBar').style.width = data.progress + '%';
-            document.getElementById('progressPercent').innerText = data.progress + '%';
-            if (data.status === 'finished') { clearInterval(interval); checkAppBackOnline(); }
-            if (data.status === 'error') { clearInterval(interval); alert("Fehler: " + data.error); }
+            try {
+                const resp = await fetch('/api/update/status');
+                if (!resp.ok) return; // Server evtl. gerade am neustarten
+                
+                const data = await resp.json();
+                progressBar.style.width = data.progress + '%';
+                progressPercent.innerText = data.progress + '%';
+
+                if (data.status === 'downloading') progressText.innerText = "Update wird heruntergeladen...";
+                else if (data.status === 'extracting') progressText.innerText = "Dateien werden entpackt...";
+                else if (data.status === 'applying') progressText.innerText = "Dateien werden kopiert...";
+                else if (data.status === 'finished') { 
+                    progressText.innerText = "Installation abgeschlossen! App wird neu gestartet...";
+                    progressBar.classList.remove('bg-primary');
+                    progressBar.classList.add('bg-success');
+                    warningText.innerHTML = '<i class="bi bi-check-circle-fill me-1"></i> Update erfolgreich. Seite lädt gleich neu...';
+                    clearInterval(interval); 
+                    checkAppBackOnline(); 
+                }
+                else if (data.status === 'error') { 
+                    clearInterval(interval); 
+                    progressText.innerText = "Fehler!";
+                    progressBar.classList.add('bg-danger');
+                    alert("Fehler beim Update: " + data.error); 
+                    location.reload();
+                }
+            } catch (e) {
+                // Bei Fetch-Fehlern während des Neustarts einfach ignorieren
+                console.log("Polling...");
+            }
         }, 1000);
     }
 
-    async function checkAppBackOnline() {
-        setInterval(async () => {
-            try { const resp = await fetch('/'); if (resp.ok) location.reload(); } catch (e) {}
+    function checkAppBackOnline() {
+        const warningText = document.getElementById('updateWarningText');
+        let attempts = 0;
+        
+        const checkInterval = setInterval(async () => {
+            attempts++;
+            if (attempts > 5) {
+                 warningText.innerText = "Verbindung wird wiederhergestellt (Versuch " + attempts + ")...";
+            }
+            
+            try { 
+                const resp = await fetch('/'); 
+                if (resp.ok) {
+                    clearInterval(checkInterval);
+                    location.reload(); 
+                }
+            } catch (e) {
+                // Server noch nicht bereit
+            }
         }, 2000);
     }
 

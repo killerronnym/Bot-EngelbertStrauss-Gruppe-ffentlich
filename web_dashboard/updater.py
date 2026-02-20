@@ -8,6 +8,7 @@ import sys
 import time
 import threading
 import signal
+import subprocess
 
 log = logging.getLogger(__name__)
 
@@ -104,15 +105,10 @@ class Updater:
 
                 # --- SCHUTZLOGIK FÜR DEINE DATEN ---
                 def should_ignore(rel_path):
-                    # 1. Kompletter Daten-Ordner (Dort liegen deine Datenbank, Quizfragen, Logs, Avatare!)
                     if rel_path.startswith("data/") or rel_path == "data": return True
-                    # 2. Python Environment & Logs
                     if rel_path.startswith(".venv/") or rel_path == ".venv": return True
                     if rel_path.endswith(".log") or rel_path.endswith(".jsonl"): return True
-                    # 3. ALLE Konfigurationsdateien (.json) schützen, damit User-Settings bleiben
-                    # Ausnahme: version.json MUSS aktualisiert werden
                     if rel_path.endswith(".json") and "version.json" not in rel_path: return True
-                    # 4. Git-Dateien
                     if rel_path.startswith(".git/"): return True
                     return False
 
@@ -141,9 +137,11 @@ class Updater:
 
                 self.update_status["status"] = "finished"
                 self.update_status["progress"] = 100
-                time.sleep(2)
+                log.info("Update finished successfully. Restarting in 3 seconds...")
+                time.sleep(3)
                 
-                # Neustart erzwingen
+                # Neustart - Wir versuchen gunicorn/den Prozess sanft zu beenden
+                # In der Firebase Studio Umgebung wird der Prozess meist automatisch neu gestartet
                 os.kill(os.getpid(), signal.SIGTERM)
 
             except Exception as e:
