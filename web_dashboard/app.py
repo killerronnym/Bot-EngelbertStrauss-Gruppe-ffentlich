@@ -11,6 +11,7 @@ from flask import (
     Flask, render_template, request, flash, redirect, url_for, jsonify, send_file, abort, session
 )
 from sqlalchemy import func, desc
+from sqlalchemy.orm import joinedload
 from werkzeug.security import generate_password_hash
 from werkzeug.utils import secure_filename
 import uuid
@@ -175,7 +176,7 @@ def live_moderation():
         query = db.query(Activity)
         if chat_id: query = query.filter(Activity.chat_id == int(chat_id))
         if topic_id and topic_id != "all": query = query.filter(Activity.thread_id == int(topic_id))
-        messages = query.order_by(Activity.ts.desc()).limit(100).all()
+        messages = query.options(joinedload(Activity.user)).order_by(Activity.ts.desc()).limit(100).all()
         topics_db = db.query(Topic).all()
     topic_dict = {}
     for t in topics_db:
