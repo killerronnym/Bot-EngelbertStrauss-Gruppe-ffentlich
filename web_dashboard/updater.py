@@ -87,7 +87,6 @@ class Updater:
                         for data in r.iter_content(chunk_size=4096):
                             dl += len(data)
                             f.write(data)
-                            # Progress von 10 bis 40% für Download
                             self.update_status["progress"] = int(10 + (dl / total_length) * 30)
                 
                 self.update_status["status"] = "extracting"
@@ -105,7 +104,7 @@ class Updater:
 
                 # --- SCHUTZLOGIK FÜR DEINE DATEN ---
                 def should_ignore(rel_path):
-                    # 1. Kompletter Daten-Ordner (Dort liegen deine Quizfragen, Logs, Avatare!)
+                    # 1. Kompletter Daten-Ordner (Dort liegen deine Datenbank, Quizfragen, Logs, Avatare!)
                     if rel_path.startswith("data/") or rel_path == "data": return True
                     # 2. Python Environment & Logs
                     if rel_path.startswith(".venv/") or rel_path == ".venv": return True
@@ -128,7 +127,7 @@ class Updater:
                     for file in files:
                         source_file = os.path.join(root, file)
                         rel_file = os.path.relpath(source_file, source_dir)
-                        if rel_file == ".": rel_file = file # Fix for flat zip
+                        if rel_file == ".": rel_file = file
                         else: rel_file = os.path.join(rel_root, file)
                         
                         target_file = os.path.join(self.project_root, rel_file)
@@ -142,9 +141,9 @@ class Updater:
 
                 self.update_status["status"] = "finished"
                 self.update_status["progress"] = 100
-                time.sleep(3)
+                time.sleep(2)
                 
-                # Neustart erzwingen (Webserver wird durch Prozess-Manager/Skript meist neu gestartet)
+                # Neustart erzwingen
                 os.kill(os.getpid(), signal.SIGTERM)
 
             except Exception as e:
