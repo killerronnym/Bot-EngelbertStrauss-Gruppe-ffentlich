@@ -92,6 +92,17 @@ def validate_config(cfg: Dict[str, Any]) -> bool:
         "main_group_id": int,
         "message_logging_enabled": bool
     }
+    
+    # Tolerant handling: try to cast strings to int for ID fields
+    id_fields = ["main_group_id", "admin_group_id", "admin_log_topic_id"]
+    for field in id_fields:
+        if field in cfg and isinstance(cfg[field], str):
+            try:
+                cfg[field] = int(cfg[field])
+                logger.info(f"Feld '{field}' von String zu Int konvertiert.")
+            except ValueError:
+                pass
+
     for key, key_type in required_keys.items():
         if key not in cfg:
             logger.critical(f"FEHLER: Fehlender Schlüssel in der Konfiguration: '{key}'")
@@ -345,7 +356,11 @@ def main():
         sys.exit(1)
         
     with open(CONFIG_FILE, "r") as f:
-        config = json.load(f)
+        try:
+            config = json.load(f)
+        except json.JSONDecodeError:
+            logger.critical("Konfigurationsdatei ist kein gültiges JSON!")
+            sys.exit(1)
     
     if not validate_config(config):
         sys.exit(1)

@@ -108,6 +108,11 @@ def save_json(path, data):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w", encoding="utf-8") as f: json.dump(data, f, indent=4, ensure_ascii=False)
 
+def to_int(val, default=None):
+    if val is None or val == "" or str(val).lower() == "null": return default
+    try: return int(val)
+    except: return default
+
 def get_bot_status():
     try:
         output = subprocess.run(["ps", "aux"], stdout=subprocess.PIPE, text=True, check=False).stdout
@@ -268,9 +273,9 @@ def id_finder_save_config():
     cfg = load_json(ID_FINDER_CONFIG_FILE)
     cfg.update({
         "bot_token": request.form.get("bot_token"),
-        "admin_group_id": request.form.get("admin_group_id"),
-        "main_group_id": request.form.get("main_group_id"),
-        "admin_log_topic_id": request.form.get("admin_log_topic_id"),
+        "admin_group_id": to_int(request.form.get("admin_group_id")),
+        "main_group_id": to_int(request.form.get("main_group_id")),
+        "admin_log_topic_id": to_int(request.form.get("admin_log_topic_id")),
         "delete_commands": "delete_commands" in request.form,
         "bot_message_cleanup_seconds": int(request.form.get("bot_message_cleanup_seconds", 0)),
         "message_logging_enabled": "message_logging_enabled" in request.form,
@@ -374,7 +379,7 @@ def save_broadcast():
     new_b = {
         "id": b_id,
         "text": request.form.get("text"),
-        "topic_id": request.form.get("topic_id"),
+        "topic_id": to_int(request.form.get("topic_id")),
         "send_mode": request.form.get("send_mode"),
         "scheduled_at": request.form.get("scheduled_at"),
         "pin_message": "pin_message" in request.form,
@@ -431,8 +436,8 @@ def outfit_bot_actions(action):
     if action == "save_config":
         cfg.update({
             "BOT_TOKEN": request.form.get("BOT_TOKEN"),
-            "CHAT_ID": request.form.get("CHAT_ID"),
-            "TOPIC_ID": request.form.get("TOPIC_ID"),
+            "CHAT_ID": to_int(request.form.get("CHAT_ID")),
+            "TOPIC_ID": to_int(request.form.get("TOPIC_ID")),
             "AUTO_POST_ENABLED": "AUTO_POST_ENABLED" in request.form,
             "POST_TIME": request.form.get("POST_TIME"),
             "WINNER_TIME": request.form.get("WINNER_TIME"),
@@ -487,8 +492,8 @@ def minecraft_status_save():
         "mc_port": int(request.form.get("mc_port", 25565)),
         "display_host": request.form.get("display_host"),
         "display_port": int(request.form.get("display_port", 25565)),
-        "chat_id": request.form.get("chat_id"),
-        "topic_id": request.form.get("topic_id")
+        "chat_id": to_int(request.form.get("chat_id")),
+        "topic_id": to_int(request.form.get("topic_id"))
     })
     save_json(MINECRAFT_STATUS_CONFIG_FILE, cfg)
     flash("Konfiguration gespeichert.", "success")
@@ -570,8 +575,8 @@ def bot_settings():
             cfg.update({
                 "is_enabled": "is_enabled" in request.form,
                 "bot_token": request.form.get("bot_token"),
-                "main_chat_id": request.form.get("main_chat_id"),
-                "topic_id": request.form.get("topic_id"),
+                "main_chat_id": to_int(request.form.get("main_chat_id")),
+                "topic_id": to_int(request.form.get("topic_id")),
                 "link_ttl_minutes": int(request.form.get("link_ttl_minutes", 15))
             })
             save_json(INVITE_BOT_CONFIG_FILE, cfg)
@@ -684,7 +689,7 @@ def quiz_settings():
     Q_FILE = os.path.join(DATA_DIR, "quizfragen.json")
     if request.method == "POST":
         action, cfg = request.form.get("action"), load_json(QUIZ_BOT_CONFIG_FILE)
-        if action == "save_settings": cfg.update({"bot_token": request.form.get("token"), "channel_id": request.form.get("channel_id"), "topic_id": request.form.get("topic_id")})
+        if action == "save_settings": cfg.update({"bot_token": request.form.get("token"), "channel_id": to_int(request.form.get("channel_id")), "topic_id": to_int(request.form.get("topic_id"))})
         elif action == "save_schedule": cfg["schedule"] = {"enabled": "schedule_enabled" in request.form, "time": request.form.get("schedule_time"), "days": [int(x) for x in request.form.getlist("schedule_days")]}
         elif action == "save_questions": save_json(Q_FILE, json.loads(request.form.get("questions_json")))
         save_json(QUIZ_BOT_CONFIG_FILE, cfg)
@@ -699,7 +704,7 @@ def umfrage_settings():
     U_FILE = os.path.join(DATA_DIR, "umfragen.json")
     if request.method == "POST":
         action, cfg = request.form.get("action"), load_json(UMFRAGE_BOT_CONFIG_FILE)
-        if action == "save_settings": cfg.update({"bot_token": request.form.get("token"), "channel_id": request.form.get("channel_id"), "topic_id": request.form.get("topic_id")})
+        if action == "save_settings": cfg.update({"bot_token": request.form.get("token"), "channel_id": to_int(request.form.get("channel_id")), "topic_id": to_int(request.form.get("topic_id"))})
         elif action == "save_schedule": cfg["schedule"] = {"enabled": "schedule_enabled" in request.form, "time": request.form.get("schedule_time"), "days": [int(x) for x in request.form.getlist("schedule_days")]}
         elif action == "save_umfragen": save_json(U_FILE, json.loads(request.form.get("umfragen_json")))
         save_json(UMFRAGE_BOT_CONFIG_FILE, cfg)

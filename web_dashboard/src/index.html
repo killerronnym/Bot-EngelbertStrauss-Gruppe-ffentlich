@@ -33,6 +33,18 @@
         50% { opacity: 0.6; }
         100% { opacity: 1; }
     }
+
+    /* Version Footer */
+    .version-footer {
+        margin-top: 5rem;
+        padding: 1.5rem 0;
+        border-top: 1px solid var(--border-muted);
+        color: var(--text-dim);
+        font-size: 0.75rem;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
 </style>
 
 <div class="dashboard-container">
@@ -342,6 +354,19 @@
                     </p>
                 </div>
             </div>
+        </div>
+    </div>
+
+    <!-- Footer inside container, no fixed position -->
+    <div class="version-footer">
+        <div>
+            <i class="bi bi-cpu-fill me-1"></i> System Online
+        </div>
+        <div>
+            Build Revision: <span class="text-white fw-bold">{{ version.version }}</span>
+        </div>
+        <div>
+            <i class="bi bi-shield-check-fill text-success me-1"></i> Verschlüsselt
         </div>
     </div>
 </div>
