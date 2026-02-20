@@ -4,6 +4,8 @@ autopep8
 
 # App
 flask
+flask-sqlalchemy
+sqlalchemy
 python-telegram-bot
 APScheduler
 pytz
@@ -11,3 +13,4 @@ pyTelegramBotAPI
 schedule
 mcstatus
 gunicorn
+python-dotenv
