@@ -75,16 +75,29 @@ class Updater:
                 # Download
                 zip_path = os.path.join(tmp_dir, "update.zip")
                 r = requests.get(zipball_url, headers=self._get_headers(), stream=True)
-                with open(zip_path, "wb") as f:
-                    for chunk in r.iter_content(chunk_size=8192):
-                        if chunk: f.write(chunk)
+                total_length = r.headers.get('content-length')
+
+                if total_length is None:
+                    with open(zip_path, "wb") as f:
+                        f.write(r.content)
+                else:
+                    dl = 0
+                    total_length = int(total_length)
+                    with open(zip_path, "wb") as f:
+                        for data in r.iter_content(chunk_size=4096):
+                            dl += len(data)
+                            f.write(data)
+                            # Progress von 10 bis 40% für Download
+                            self.update_status["progress"] = int(10 + (dl / total_length) * 30)
                 
                 self.update_status["status"] = "extracting"
-                self.update_status["progress"] = 40
+                self.update_status["progress"] = 50
                 with zipfile.ZipFile(zip_path, "r") as zip_ref:
                     zip_ref.extractall(tmp_dir)
                 
                 extracted_folders = [f for f in os.listdir(tmp_dir) if os.path.isdir(os.path.join(tmp_dir, f))]
+                if not extracted_folders:
+                     raise Exception("No folder found in zip")
                 source_dir = os.path.join(tmp_dir, extracted_folders[0])
                 
                 self.update_status["status"] = "applying"
@@ -98,11 +111,13 @@ class Updater:
                     if rel_path.startswith(".venv/") or rel_path == ".venv": return True
                     if rel_path.endswith(".log") or rel_path.endswith(".jsonl"): return True
                     # 3. ALLE Konfigurationsdateien (.json) schützen, damit User-Settings bleiben
-                    if rel_path.endswith(".json"): return True
+                    # Ausnahme: version.json MUSS aktualisiert werden
+                    if rel_path.endswith(".json") and "version.json" not in rel_path: return True
                     # 4. Git-Dateien
                     if rel_path.startswith(".git/"): return True
                     return False
 
+                # Dateien kopieren
                 for root, dirs, files in os.walk(source_dir):
                     rel_root = os.path.relpath(root, source_dir)
                     target_root = self.project_root if rel_root == "." else os.path.join(self.project_root, rel_root)
@@ -113,6 +128,9 @@ class Updater:
                     for file in files:
                         source_file = os.path.join(root, file)
                         rel_file = os.path.relpath(source_file, source_dir)
+                        if rel_file == ".": rel_file = file # Fix for flat zip
+                        else: rel_file = os.path.join(rel_root, file)
+                        
                         target_file = os.path.join(self.project_root, rel_file)
                         
                         if not should_ignore(rel_file):
@@ -124,9 +142,9 @@ class Updater:
 
                 self.update_status["status"] = "finished"
                 self.update_status["progress"] = 100
-                time.sleep(2)
+                time.sleep(3)
                 
-                # Neustart
+                # Neustart erzwingen (Webserver wird durch Prozess-Manager/Skript meist neu gestartet)
                 os.kill(os.getpid(), signal.SIGTERM)
 
             except Exception as e:
