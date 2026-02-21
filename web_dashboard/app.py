@@ -274,7 +274,7 @@ def live_moderation_delete():
     reason = request.form.get("reason_preset")
     if reason == "other":
         reason = request.form.get("reason_custom")
-    reason = (reason or "Verstoß").strip() or "Verstoß"
+
 
     chat_id_int = _parse_filter_int(chat_id, "chat_id")
     message_id_int = _parse_filter_int(message_id, "message_id")
