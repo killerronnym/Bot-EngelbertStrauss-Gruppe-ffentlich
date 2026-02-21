@@ -16,6 +16,7 @@ from werkzeug.security import generate_password_hash
 from werkzeug.utils import secure_filename
 import uuid
 import threading
+import tempfile
 
 # ✅ Umfassender Pfad-Fix für NAS/Docker Umgebungen
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -78,20 +79,39 @@ with app.app_context():
     init_db()
 
 # --- Helpers ---
+JSON_FILE_LOCK = threading.Lock()
+
 def load_json(path, default=None):
-    if not os.path.exists(path): return default if default is not None else {}
+    fallback = default if default is not None else {}
+    if not os.path.exists(path):
+        return fallback
     try:
-        with open(path, "r", encoding="utf-8") as f: return json.load(f)
-    except: return default if default is not None else {}
+        with JSON_FILE_LOCK:
+            with open(path, "r", encoding="utf-8") as f:
+                return json.load(f)
+    except Exception as e:
+        log.warning(f"Could not load JSON from {path}: {e}")
+        return fallback
 
 def save_json(path, data):
     os.makedirs(os.path.dirname(path), exist_ok=True)
-    with open(path, "w", encoding="utf-8") as f: json.dump(data, f, indent=4, ensure_ascii=False)
+    fd, temp_path = tempfile.mkstemp(prefix=".tmp_", suffix=".json", dir=os.path.dirname(path))
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=4, ensure_ascii=False)
+            f.flush()
+            os.fsync(f.fileno())
+        with JSON_FILE_LOCK:
+            os.replace(temp_path, path)
+    except Exception:
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
+        raise
 
 def to_int(val, default=None):
     if val is None or val == "" or str(val).lower() == "null": return default
     try: return int(val)
-    except: return default
+    except (TypeError, ValueError): return default
 
 def get_bot_status():
     try:
@@ -254,7 +274,7 @@ def live_moderation_delete():
     reason = request.form.get("reason_preset")
     if reason == "other":
         reason = request.form.get("reason_custom")
-    reason = (reason or "Verstoß").strip()
+
 
     chat_id_int = _parse_filter_int(chat_id, "chat_id")
     message_id_int = _parse_filter_int(message_id, "message_id")
@@ -381,7 +401,7 @@ def id_finder_dashboard():
 @login_required
 def id_finder_save_config():
     cfg = load_json(ID_FINDER_CONFIG_FILE)
-    cfg.update({"bot_token": request.form.get("bot_token"), "admin_group_id": to_int(request.form.get("admin_group_id")), "main_group_id": to_int(request.form.get("main_group_id")), "admin_log_topic_id": to_int(request.form.get("admin_log_topic_id")), "delete_commands": "delete_commands" in request.form, "bot_message_cleanup_seconds": int(request.form.get("bot_message_cleanup_seconds", 0)), "message_logging_enabled": "message_logging_enabled" in request.form, "message_logging_ignore_commands": "message_logging_ignore_commands" in request.form, "message_logging_groups_only": "message_logging_groups_only" in request.form})
+    cfg.update({"bot_token": request.form.get("bot_token"), "admin_group_id": to_int(request.form.get("admin_group_id")), "main_group_id": to_int(request.form.get("main_group_id")), "admin_log_topic_id": to_int(request.form.get("admin_log_topic_id")), "delete_commands": "delete_commands" in request.form, "bot_message_cleanup_seconds": max(0, to_int(request.form.get("bot_message_cleanup_seconds"), 0)), "message_logging_enabled": "message_logging_enabled" in request.form, "message_logging_ignore_commands": "message_logging_ignore_commands" in request.form, "message_logging_groups_only": "message_logging_groups_only" in request.form})
     save_json(ID_FINDER_CONFIG_FILE, cfg)
     flash("Konfiguration gespeichert.", "success")
     return redirect(url_for("id_finder_dashboard"))
@@ -469,10 +489,13 @@ def api_user_activity(user_id):
     days = request.args.get("days", type=int)
     month = request.args.get("month", type=int)
     year = request.args.get("year", type=int)
-    
+    user_id_int = to_int(user_id)
+    if user_id_int is None:
+        return jsonify({"error": "invalid user_id"}), 400
+
     with SessionLocal() as db:
         query = db.query(func.date(Activity.ts).label('date'), func.count(Activity.id).label('count'))\
-            .filter(Activity.user_id == int(user_id))
+            .filter(Activity.user_id == user_id_int)
         
         if days:
             start_date = datetime.utcnow() - timedelta(days=days)
