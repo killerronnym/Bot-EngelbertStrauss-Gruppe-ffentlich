@@ -18,7 +18,7 @@ The project is configured to run in a Nix-based environment managed by Firebase 
   ```bash
   source .venv/bin/activate
   ```
-- **Running the Server:** The Flask development server can be started using the `web` preview task, which executes the `./devserver.sh` script. This script handles running the Flask development server on the correct port for the preview panel.
+- **Running the Server:** The Flask development server can be started using the `web` preview task, which executes `python3 web_dashboard/app.py` in the project root. This starts the Flask development server on the configured port for local preview.
 - **Tooling:** The workspace is pre-configured with the official Microsoft Python extension for VS Code, providing features like linting, debugging, and IntelliSense. Depending on the template variation, it may also include the Thunder Client extension for testing API endpoints.
 
 When providing assistance, assume this environment is set up. Remind the user to activate the virtual environment (`source .venv/bin/activate`) before running any `pip` or `python` commands in the terminal.

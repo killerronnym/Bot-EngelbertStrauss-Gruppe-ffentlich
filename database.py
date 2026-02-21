@@ -1,6 +1,6 @@
 import os
 from datetime import datetime
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, Text, ForeignKey, JSON
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, Text, ForeignKey, JSON, inspect, text
 from sqlalchemy.orm import declarative_base, sessionmaker, relationship
 from sqlalchemy import create_engine
 
@@ -99,6 +99,20 @@ class ModerationLog(Base):
 
 def init_db():
     Base.metadata.create_all(bind=engine)
+    _ensure_activity_columns()
+
+
+def _ensure_activity_columns():
+    inspector = inspect(engine)
+    if "activities" not in inspector.get_table_names():
+        return
+
+    columns = {col["name"] for col in inspector.get_columns("activities")}
+    if "is_deleted" in columns:
+        return
+
+    with engine.begin() as connection:
+        connection.execute(text("ALTER TABLE activities ADD COLUMN is_deleted BOOLEAN DEFAULT 0"))
 
 def get_db():
     db = SessionLocal()
