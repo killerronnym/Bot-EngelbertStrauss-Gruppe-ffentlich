@@ -1,8 +1,8 @@
 import os
 from datetime import datetime
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, Text, ForeignKey, JSON
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, Text, ForeignKey, JSON, inspect, text
 from sqlalchemy.orm import declarative_base, sessionmaker, relationship
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 
 # Determine Database Path
 # Priority 1: Environment Variable
@@ -20,7 +20,31 @@ else:
 os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
 
 Base = declarative_base()
-engine = create_engine(f"sqlite:///{DB_PATH}", echo=False, connect_args={"check_same_thread": False})
+engine = create_engine(
+    f"sqlite:///{DB_PATH}",
+    echo=False,
+    connect_args={"check_same_thread": False, "timeout": 30},
+    pool_pre_ping=True,
+)
+
+@event.listens_for(engine, "connect")
+def _set_sqlite_pragma(dbapi_connection, connection_record):
+    cursor = dbapi_connection.cursor()
+    pragmas = [
+        "PRAGMA journal_mode=WAL",
+        "PRAGMA synchronous=NORMAL",
+        "PRAGMA foreign_keys=ON",
+        "PRAGMA busy_timeout=30000",
+    ]
+    for pragma in pragmas:
+        try:
+            cursor.execute(pragma)
+        except Exception:
+            # Some environments/filesystems may not support all PRAGMAs.
+            # Do not block DB usage because of non-critical tuning commands.
+            pass
+    cursor.close()
+
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 class User(Base):
@@ -99,6 +123,20 @@ class ModerationLog(Base):
 
 def init_db():
     Base.metadata.create_all(bind=engine)
+    _ensure_activity_columns()
+
+
+def _ensure_activity_columns():
+    inspector = inspect(engine)
+    if "activities" not in inspector.get_table_names():
+        return
+
+    columns = {col["name"] for col in inspector.get_columns("activities")}
+    if "is_deleted" in columns:
+        return
+
+    with engine.begin() as connection:
+        connection.execute(text("ALTER TABLE activities ADD COLUMN is_deleted BOOLEAN DEFAULT 0"))
 
 def get_db():
     db = SessionLocal()

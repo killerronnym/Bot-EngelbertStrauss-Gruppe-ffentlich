@@ -56,10 +56,12 @@
     <aside class="sidebar">
         <h5 class="fw-bold"><i class="bi bi-chat-left-text-fill me-2"></i>Kanäle</h5>
         <ul class="list-group topic-list mb-4">
-             <a href="{{ url_for('live_moderation', topic_id='all') }}"
-                class="list-group-item {% if selected_topic_id == 'all' or not selected_topic_id %}active{% endif %}">
-                🌐 Alle Nachrichten
-             </a>
+            <li class="list-group-item p-0 border-0">
+                <a href="{{ url_for('live_moderation', topic_id='all') }}"
+                   class="list-group-item {% if selected_topic_id == 'all' or not selected_topic_id %}active{% endif %}">
+                    🌐 Alle Nachrichten
+                </a>
+            </li>
         </ul>
         {% for chat_id, chat_data in topics.items() %}
             <div class="mb-3">
@@ -67,10 +69,12 @@
                 <ul class="list-group topic-list">
                     {% if chat_data.topics and chat_data.topics is mapping %}
                         {% for topic_id, topic_name in chat_data.topics.items() %}
-                            <a href="{{ url_for('live_moderation', chat_id=chat_id, topic_id=topic_id) }}" 
-                               class="list-group-item {% if selected_chat_id == chat_id|string and selected_topic_id == topic_id|string %}active{% endif %}">
-                                {{ topic_name }}
-                            </a>
+                            <li class="list-group-item p-0 border-0">
+                                <a href="{{ url_for('live_moderation', chat_id=chat_id, topic_id=topic_id) }}"
+                                   class="list-group-item {% if selected_chat_id == chat_id|string and selected_topic_id == topic_id|string %}active{% endif %}">
+                                    {{ topic_name }}
+                                </a>
+                            </li>
                         {% endfor %}
                     {% endif %}
                 </ul>
@@ -122,13 +126,20 @@
                         <i class="bi bi-person-fill"></i> Details
                     </a>
                     {% if not msg.is_deleted %}
-                    <button class="btn btn-sm btn-danger"
-                            onclick="openDeleteModal('{{ msg.user_id }}', '{{ msg.chat_id }}', '{{ msg.message_id }}', '{{ (msg.user.full_name if msg.user else (msg.user.username if msg.user else msg.user_id))|escape }}', '{{ (topics.get(msg.chat_id|string, {}).get('name', 'Unbekannte Gruppe'))|escape }}', '{{ msg.thread_id or '' }}')">
+                    <button class="btn btn-sm btn-danger js-open-delete"
+                            data-user-id="{{ msg.user_id }}"
+                            data-chat-id="{{ msg.chat_id }}"
+                            data-message-id="{{ msg.message_id }}"
+                            data-topic-id="{{ msg.thread_id or '' }}"
+                            data-user-name="{{ (msg.user.full_name if msg.user else (msg.user.username if msg.user else msg.user_id))|e }}"
+                            data-chat-name="{{ (topics.get(msg.chat_id|string, {}).get('name', 'Unbekannte Gruppe'))|e }}">
                         <i class="bi bi-trash-fill"></i> Löschen
                     </button>
                     {% endif %}
                 </div>
             </div>
+            {% else %}
+            <div class="text-muted">Keine Nachrichten für den gewählten Filter gefunden.</div>
             {% endfor %}
         </div>
     </main>
@@ -263,6 +274,19 @@
         var deleteModal = new bootstrap.Modal(document.getElementById('deleteModal'));
         deleteModal.show();
     }
+
+    document.querySelectorAll('.js-open-delete').forEach((button) => {
+        button.addEventListener('click', () => {
+            openDeleteModal(
+                button.dataset.userId,
+                button.dataset.chatId,
+                button.dataset.messageId,
+                button.dataset.userName,
+                button.dataset.chatName,
+                button.dataset.topicId
+            );
+        });
+    });
 
     function toggleReasonVisibility(show) {
         // Reason container is now always visible since we need a reason for the public notice too

@@ -60,9 +60,11 @@ class Updater:
                         "zipball_url": data.get("zipball_url")
                     }
             else:
-                log.error(f"GitHub API returned status {response.status_code}")
+                log.warning(f"GitHub API returned status {response.status_code}; update check skipped")
+        except requests.RequestException as e:
+            log.warning(f"Update check skipped due to network issue: {e}")
         except Exception as e:
-            log.error(f"Error checking GitHub for updates: {e}")
+            log.error(f"Unexpected error checking GitHub for updates: {e}")
         return {"update_available": False}
 
     def install_update(self, zipball_url, new_version, published_at):

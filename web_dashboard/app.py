@@ -16,6 +16,7 @@ from werkzeug.security import generate_password_hash
 from werkzeug.utils import secure_filename
 import uuid
 import threading
+import tempfile
 
 # ✅ Umfassender Pfad-Fix für NAS/Docker Umgebungen
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -78,20 +79,39 @@ with app.app_context():
     init_db()
 
 # --- Helpers ---
+JSON_FILE_LOCK = threading.Lock()
+
 def load_json(path, default=None):
-    if not os.path.exists(path): return default if default is not None else {}
+    fallback = default if default is not None else {}
+    if not os.path.exists(path):
+        return fallback
     try:
-        with open(path, "r", encoding="utf-8") as f: return json.load(f)
-    except: return default if default is not None else {}
+        with JSON_FILE_LOCK:
+            with open(path, "r", encoding="utf-8") as f:
+                return json.load(f)
+    except Exception as e:
+        log.warning(f"Could not load JSON from {path}: {e}")
+        return fallback
 
 def save_json(path, data):
     os.makedirs(os.path.dirname(path), exist_ok=True)
-    with open(path, "w", encoding="utf-8") as f: json.dump(data, f, indent=4, ensure_ascii=False)
+    fd, temp_path = tempfile.mkstemp(prefix=".tmp_", suffix=".json", dir=os.path.dirname(path))
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=4, ensure_ascii=False)
+            f.flush()
+            os.fsync(f.fileno())
+        with JSON_FILE_LOCK:
+            os.replace(temp_path, path)
+    except Exception:
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
+        raise
 
 def to_int(val, default=None):
     if val is None or val == "" or str(val).lower() == "null": return default
     try: return int(val)
-    except: return default
+    except (TypeError, ValueError): return default
 
 def get_bot_status():
     try:
@@ -172,17 +192,40 @@ def login():
 @login_required
 def index(): return render_template("index.html", version=load_json(VERSION_FILE, {"version": "1.0.0"}))
 
+@app.route("/live_moderation")
+@login_required
+def live_moderation_legacy_redirect():
+    query_args = request.args.to_dict(flat=True)
+    return redirect(url_for("live_moderation", **query_args), code=301)
+
+
+def _parse_filter_int(value, field_name):
+    if not value:
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        flash(f"Ungültiger {field_name}-Filter wurde ignoriert.", "warning")
+        return None
+
+
 @app.route("/live-moderation")
 @login_required
 def live_moderation():
-    chat_id = request.args.get("chat_id")
-    topic_id = request.args.get("topic_id")
+    raw_chat_id = request.args.get("chat_id")
+    raw_topic_id = request.args.get("topic_id")
+
+    chat_id = _parse_filter_int(raw_chat_id, "chat_id")
+    topic_id = "all" if raw_topic_id == "all" else _parse_filter_int(raw_topic_id, "topic_id")
+
     with SessionLocal() as db:
         query = db.query(Activity)
-        if chat_id: query = query.filter(Activity.chat_id == int(chat_id))
-        if topic_id and topic_id != "all": query = query.filter(Activity.thread_id == int(topic_id))
+        if chat_id is not None:
+            query = query.filter(Activity.chat_id == chat_id)
+        if topic_id not in (None, "all"):
+            query = query.filter(Activity.thread_id == topic_id)
         messages = query.options(joinedload(Activity.user)).order_by(Activity.ts.desc()).limit(100).all()
-        topics_db = db.query(Topic).all()
+        topics_db = db.query(Topic).order_by(Topic.chat_id.asc(), Topic.topic_id.asc()).all()
 
         # Fetch Chat Titles
         unique_chat_ids = list(set(t.chat_id for t in topics_db))
@@ -206,7 +249,7 @@ def live_moderation():
             display_name = chat_titles.get(t.chat_id, f"Chat {cid}")
             topic_dict[cid] = {"name": display_name, "topics": {}}
         topic_dict[cid]["topics"][str(t.topic_id)] = t.name
-    return render_template("live_moderation.html", messages=messages, topics=topic_dict, mod_config=load_json(os.path.join(DATA_DIR, "moderation_config.json"), {}), selected_chat_id=chat_id, selected_topic_id=topic_id)
+    return render_template("live_moderation.html", messages=messages, topics=topic_dict, mod_config=load_json(os.path.join(DATA_DIR, "moderation_config.json"), {}), selected_chat_id=str(chat_id) if chat_id is not None else None, selected_topic_id=str(topic_id) if topic_id is not None else None)
 
 @app.route("/live-moderation/config", methods=["POST"])
 @login_required
@@ -224,8 +267,23 @@ def live_moderation_delete():
     message_id = request.form.get("message_id")
     topic_id = request.form.get("topic_id")
     action = request.form.get("action") # delete, warn
+    if action not in {"delete", "warn"}:
+        flash("Ungültige Moderationsaktion: Aktion wurde abgebrochen.", "danger")
+        return redirect(url_for("live_moderation"))
+
     reason = request.form.get("reason_preset")
-    if reason == "other": reason = request.form.get("reason_custom")
+    if reason == "other":
+        reason = request.form.get("reason_custom")
+    reason = (reason or "Verstoß").strip() or "Verstoß"
+
+    chat_id_int = _parse_filter_int(chat_id, "chat_id")
+    message_id_int = _parse_filter_int(message_id, "message_id")
+    user_id_int = _parse_filter_int(user_id, "user_id")
+    topic_id_int = _parse_filter_int(topic_id, "topic_id") if topic_id not in (None, "", "None", "all") else None
+
+    if chat_id_int is None or message_id_int is None or user_id_int is None:
+        flash("Ungültige Moderationsdaten: Aktion wurde abgebrochen.", "danger")
+        return redirect(url_for("live_moderation"))
     
     post_to_topic = "post_to_topic" in request.form
     send_dm = "send_dm" in request.form
@@ -242,14 +300,14 @@ def live_moderation_delete():
 
     # 1. Delete Message
     try:
-        del_res = requests.post(f"https://api.telegram.org/bot{token}/deleteMessage", json={"chat_id": chat_id, "message_id": message_id})
+        del_res = requests.post(f"https://api.telegram.org/bot{token}/deleteMessage", json={"chat_id": chat_id_int, "message_id": message_id_int})
         if del_res.status_code != 200:
              log.error(f"Failed to delete message: {del_res.text}")
              flash(f"Fehler beim Löschen der Nachricht: {del_res.text}", "danger")
         else:
             # Update DB to mark as deleted
             with SessionLocal() as db:
-                msg = db.query(Activity).filter(Activity.message_id == int(message_id), Activity.chat_id == int(chat_id)).first()
+                msg = db.query(Activity).filter(Activity.message_id == message_id_int, Activity.chat_id == chat_id_int).first()
                 if msg:
                     msg.is_deleted = True
                     db.commit()
@@ -262,32 +320,32 @@ def live_moderation_delete():
     with SessionLocal() as db:
         # Create Mod Log
         mod_log = ModerationLog(
-            chat_id=int(chat_id) if chat_id else 0,
-            user_id=int(user_id) if user_id else 0,
+            chat_id=chat_id_int,
+            user_id=user_id_int,
             admin_id=0, # Web Admin
             action=action,
             reason=reason,
-            message_id=int(message_id) if message_id else 0
+            message_id=message_id_int
         )
         db.add(mod_log)
         
         db.commit() # Commit to get ID and save log
 
         # Determine Warn Count (for placeholders)
-        warn_count = db.query(ModerationLog).filter(ModerationLog.user_id == int(user_id), ModerationLog.action == "warn").count()
+        warn_count = db.query(ModerationLog).filter(ModerationLog.user_id == user_id_int, ModerationLog.action == "warn").count()
 
         # Send DM?
         if send_dm:
              warn_text = mod_cfg.get("warning_text", "")
              if warn_text:
-                 txt = warn_text.replace("{user}", user_name or str(user_id))\
+                 txt = warn_text.replace("{user}", user_name or str(user_id_int))\
                                 .replace("{reason}", reason or "Verstoß")\
                                 .replace("{warn_count}", str(warn_count))\
                                 .replace("{max_warnings}", str(mod_cfg.get("max_warnings", 3)))\
                                 .replace("{group}", request.form.get("chat_name") or "der Gruppe")
                  
                  try:
-                     dm_res = requests.post(f"https://api.telegram.org/bot{token}/sendMessage", json={"chat_id": user_id, "text": txt})
+                     dm_res = requests.post(f"https://api.telegram.org/bot{token}/sendMessage", json={"chat_id": user_id_int, "text": txt})
                      if dm_res.status_code != 200:
                          log.error(f"Failed to send DM: {dm_res.text}")
                          # Maybe user blocked bot or hasn't started it
@@ -297,14 +355,14 @@ def live_moderation_delete():
         if post_to_topic:
              notice_text = mod_cfg.get("public_delete_notice_text", "")
              if notice_text:
-                 txt = notice_text.replace("{user}", user_name or str(user_id)).replace("{reason}", reason or "Verstoß")
-                 payload = {"chat_id": chat_id, "text": txt}
+                 txt = notice_text.replace("{user}", user_name or str(user_id_int)).replace("{reason}", reason or "Verstoß")
+                 payload = {"chat_id": chat_id_int, "text": txt}
                  
                  # IMPORTANT: thread_id handling. 
                  # If topic_id is "None" or 0 or empty, we shouldn't send message_thread_id unless it's a supergroup with topics enabled.
                  # If the message came from a topic, we reply to that topic.
-                 if topic_id and topic_id != "None" and topic_id != "0": 
-                     payload["message_thread_id"] = int(topic_id)
+                 if topic_id_int and topic_id_int != 0:
+                     payload["message_thread_id"] = topic_id_int
                  
                  try:
                      res = requests.post(f"https://api.telegram.org/bot{token}/sendMessage", json=payload)
@@ -324,11 +382,12 @@ def live_moderation_delete():
                                      except Exception as e:
                                          log.error(f"Error auto-deleting notice: {e}")
                                  
-                                 threading.Thread(target=delete_later, args=(chat_id, sent_msg_id, duration), daemon=True).start()
+                                 threading.Thread(target=delete_later, args=(chat_id_int, sent_msg_id, duration), daemon=True).start()
                  except Exception as e: log.error(f"Failed to post topic notice: {e}")
 
     flash(f"Aktion '{action}' ausgeführt.", "success")
-    return redirect(url_for("live_moderation", chat_id=chat_id, topic_id=topic_id))
+    topic_redirect = "all" if topic_id == "all" else topic_id_int
+    return redirect(url_for("live_moderation", chat_id=chat_id_int, topic_id=topic_redirect))
 
 # --- ID FINDER ---
 @app.route("/id-finder")
@@ -342,7 +401,7 @@ def id_finder_dashboard():
 @login_required
 def id_finder_save_config():
     cfg = load_json(ID_FINDER_CONFIG_FILE)
-    cfg.update({"bot_token": request.form.get("bot_token"), "admin_group_id": to_int(request.form.get("admin_group_id")), "main_group_id": to_int(request.form.get("main_group_id")), "admin_log_topic_id": to_int(request.form.get("admin_log_topic_id")), "delete_commands": "delete_commands" in request.form, "bot_message_cleanup_seconds": int(request.form.get("bot_message_cleanup_seconds", 0)), "message_logging_enabled": "message_logging_enabled" in request.form, "message_logging_ignore_commands": "message_logging_ignore_commands" in request.form, "message_logging_groups_only": "message_logging_groups_only" in request.form})
+    cfg.update({"bot_token": request.form.get("bot_token"), "admin_group_id": to_int(request.form.get("admin_group_id")), "main_group_id": to_int(request.form.get("main_group_id")), "admin_log_topic_id": to_int(request.form.get("admin_log_topic_id")), "delete_commands": "delete_commands" in request.form, "bot_message_cleanup_seconds": max(0, to_int(request.form.get("bot_message_cleanup_seconds"), 0)), "message_logging_enabled": "message_logging_enabled" in request.form, "message_logging_ignore_commands": "message_logging_ignore_commands" in request.form, "message_logging_groups_only": "message_logging_groups_only" in request.form})
     save_json(ID_FINDER_CONFIG_FILE, cfg)
     flash("Konfiguration gespeichert.", "success")
     return redirect(url_for("id_finder_dashboard"))
@@ -430,10 +489,13 @@ def api_user_activity(user_id):
     days = request.args.get("days", type=int)
     month = request.args.get("month", type=int)
     year = request.args.get("year", type=int)
-    
+    user_id_int = to_int(user_id)
+    if user_id_int is None:
+        return jsonify({"error": "invalid user_id"}), 400
+
     with SessionLocal() as db:
         query = db.query(func.date(Activity.ts).label('date'), func.count(Activity.id).label('count'))\
-            .filter(Activity.user_id == int(user_id))
+            .filter(Activity.user_id == user_id_int)
         
         if days:
             start_date = datetime.utcnow() - timedelta(days=days)
@@ -505,7 +567,7 @@ def id_finder_update_admin_permissions():
 def user_detail(user_id):
     with SessionLocal() as db:
         user = db.query(User).filter(User.id == int(user_id)).first()
-        mod_logs = db.query(ModerationLog).filter(ModerationLog.user_id == int(user_id)).order_by(ModerationLog.ts.desc()).all()
+        mod_logs = db.query(ModerationLog).filter(ModerationLog.user_id == user_id_int).order_by(ModerationLog.ts.desc()).all()
         
         if not user: abort(404)
         return render_template("id_finder_user_detail.html", user=user, mod_logs=mod_logs)

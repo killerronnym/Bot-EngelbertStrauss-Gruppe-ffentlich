@@ -8,6 +8,10 @@ bots_archive/
 *.db
 nohup.out
 
+bots/id_finder_bot/import
+bots/id_finder_bot/PY
+web_dashboard/critical_errors.log*
+app.log*
 # --- KONFIGURATIONEN (SENSibel) ---
 # Wir ignorieren alle JSON-Dateien, die Passwörter oder Tokens enthalten könnten
 web_dashboard/users.json

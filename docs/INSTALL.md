@@ -34,7 +34,7 @@ Diese Anleitung hilft dir, das Bot-System mit der neuen SQL-Datenbank auf deinem
 
 Das Dashboard ist die zentrale Steuereinheit.
 ```bash
-./devserver.sh
+python3 web_dashboard/app.py
 ```
 Oder manuell via Gunicorn (Produktion):
 ```bash
